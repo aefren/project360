@@ -1,14 +1,15 @@
+import time
+from cytolk import tolk
 from pdb import Pdb
 
-area = []
-tile = 0
-for r in range(0,3,1):
-    area.append([tile])
-    tile += 1
-    for x in range(0,3,1):
-        area[r].append(tile)
-        tile += 1
+tolk.load()
+
+def timer(seconds):
+    tolk.output(f"Starting!",1)
+    while  seconds > 0:
+        tolk.output(f"{seconds}.",1)
+        seconds -= 1
+        time.sleep(1)
 
 
-lst = [[0]*4]*6
-Pdb().set_trace()
+timer(60) 

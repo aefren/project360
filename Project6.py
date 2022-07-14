@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 import os
 #from glob import glob
-#from math import ceil, floor
+import math
 #from statistics import mean, median
 from pdb import Pdb
 from random import choice, randint, uniform, shuffle
@@ -45,16 +45,22 @@ pygame.init()
 class Player:
     def __init__(self, name):
         self.name = name
-        self.heading = 1
-        self.countdown = 900
+        self.y = 10
+        self.x = 10
+        self.degrees = 0
+        self.countdown = 500
         self._countdown = 0
         self.foot = [
-            "foot-giant01", 
-            "foot-giant02", 
-            "foot-giant03", 
-            "foot-giant04"]
+            "foot01", 
+            "foot02", 
+            "foot03", 
+            "foot04"]
     def can_walk(self):
         if self.ctime > self._countdown: return 1
+    def say_degrees(self):
+        tolk.output(f"{self.degrees}.",1)
+    def say_cdt(self):
+        tolk.output(f"y {round(self.y, 3)}, x {round(self.x, 3)}.",1)
     def update(self):
         self.ctime = self.game.ctime
 
@@ -83,20 +89,33 @@ class Main:
             "Oeste", 
             "Noroeste"]
         self.head_index = 0
-    def Move_unit(self, unit):
+    def get_radians(self, degrees):
+        return (
+            math.cos(math.radians(degrees)), 
+            math.sin(math.radians(degrees))
+            )
+    def Move_unit(self, unit, backward=0):
         if unit.can_walk():
             unit._countdown = self.ctime + unit.countdown
+            degrees = unit.degrees
+            if backward:
+                degrees += 180
+                if degrees > 360: degrees -= 361
+            radians = self.get_radians(degrees)
+            self.player.y += radians[0]
+            self.player.x += radians[1]
             loadsound(choice(unit.foot))
-    def global_keys(self):
-        pass
+    def global_keys(self, event):
+        if event.key == pygame.K_x:
+            self.player.say_cdt()
     def run(self):
         tolk.output(f"Starting.")
         self.players = [Player("Player 1")]
+        self.player = self.players[0]
         for it in self.players:
             it.game = self
         while True:
             pygame.time.Clock().tick(60)
-            unit = self.players[0]
             self.ctime = pygame.time.get_ticks()
             [it.update() for it in self.players]
             self.key_pressed = pygame.key.get_pressed()
@@ -104,62 +123,38 @@ class Main:
             self.ctrl = self.key_pressed[224] or self.key_pressed[228]
             self.shift = self.key_pressed[225] or self.key_pressed[229]
             
-            if self.key_pressed[pygame.K_UP]:
-                self.Move_unit(unit)
+            if self.key_pressed[pygame.K_UP] and self.key_pressed[pygame.K_RSHIFT] == 0:
+                self.Move_unit(self.player)
             if self.key_pressed[pygame.K_DOWN]:
-                self.Move_unit(unit)
-            for evt in pygame.event.get():            
-                if evt.type == pygame.KEYDOWN and evt.key == pygame.K_LEFT: 
-                    if self.key_pressed[pygame.K_RCTRL]:
-                        if self.head_index == 0: self.head_index = 4
-                        elif self.head_index == 1: self.head_index = 5
-                        elif self.head_index == 2: self.head_index = 6
-                        elif self.head_index == 3: self.head_index = 7
-                        elif self.head_index == 4: self.head_index = 0
-                        elif self.head_index == 5: self.head_index = 1
-                        elif self.head_index == 6: self.head_index = 2
-                        elif self.head_index == 7: self.head_index = 3
-                        if unit._countdown < unit.ctime:
-                            unit._countdown = (self.ctime + unit.countdown)
-                        else:
-                            unit._countdown += (unit.countdown)
-                    else: 
-                        self.head_index -= 1
-                        if self.head_index < 0: self.head_index = 7
-                        if unit._countdown < unit.ctime:
-                            unit._countdown = (self.ctime + 
-                                                unit.countdown*0.25)
-                        else:
-                            unit._countdown += (unit.countdown * 0.25)
-                    tolk.output(f"{self.head[self.head_index]}.")
-                if evt.type == pygame.KEYDOWN and evt.key == pygame.K_RIGHT:
-                    if self.key_pressed[pygame.K_RCTRL]:
-                        if self.head_index == 0: self.head_index = 4
-                        elif self.head_index == 1: self.head_index = 5
-                        elif self.head_index == 2: self.head_index = 6
-                        elif self.head_index == 3: self.head_index = 7
-                        elif self.head_index == 4: self.head_index = 0
-                        elif self.head_index == 5: self.head_index = 1
-                        elif self.head_index == 6: self.head_index = 2
-                        elif self.head_index == 7: self.head_index = 3
-                        if unit._countdown < unit.ctime:
-                            unit._countdown = (self.ctime + unit.countdown)
-                        else:
-                            unit._countdown += (unit.countdown)
-                    else: 
-                        self.head_index += 1
-                        if self.head_index > 7: self.head_index = 0
-                        if unit._countdown < unit.ctime:
-                            unit._countdown = (self.ctime 
-                                                + unit.countdown * 0.25)
-                        else:
-                            unit._countdown += (unit.countdown * 0.25) 
-                    tolk.output(f"{self.head[self.head_index]}.") 
-                if self.key_pressed[pygame.K_F12]:
-                    Pdb().set_trace()
-                    tolk.output(f"Debug On.")
-                if self.key_pressed[pygame.K_ESCAPE]:
-                    return
+                self.Move_unit(self.player, 1)
+            for evt in pygame.event.get():
+                #self.global_keys(evt)
+                if evt.type == pygame.KEYDOWN:
+                    if evt.key == pygame.K_x:
+                        self.player.say_cdt()             
+                    if evt.key == pygame.K_LEFT: 
+                        if self.key_pressed[pygame.K_RCTRL]: self.player.degrees -= 90
+                        elif self.key_pressed[pygame.K_RSHIFT]: self.player.degrees -= 45
+                        else: self.player.degrees -= 1
+                        if self.player.degrees < 0: self.player.degrees += 361
+                        self.player.say_degrees()
+                    if evt.key == pygame.K_RIGHT:
+                        if self.key_pressed[pygame.K_RCTRL]: 
+                            self.player.degrees += 90
+                        elif self.key_pressed[pygame.K_RSHIFT]: self.player.degrees += 45
+                        else: self.player.degrees += 1
+                        if self.player.degrees > 360: self.player.degrees -= 361
+                        self.player.say_degrees()
+                    if evt.key == pygame.K_UP:
+                        if self.key_pressed[pygame.K_RSHIFT]: 
+                            self.player.degrees += 180
+                            if self.player.degrees > 360: self.player.degrees -= 360
+                            self.player.say_degrees()
+                    if self.key_pressed[pygame.K_F12]:
+                        Pdb().set_trace()
+                        tolk.output(f"Debug On.")
+                    if self.key_pressed[pygame.K_ESCAPE]:
+                        return
 
 
 Main().run()
