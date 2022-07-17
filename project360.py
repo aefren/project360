@@ -67,7 +67,7 @@ class World:
     def __init__(self):
         self.name = None
         self.tiles = []
-    def create_map(self):
+    def new_world(self):
         tolk.output(f"creating world.", 1)
         self.name = "Map 1"
         #self.ext = ".map"
@@ -94,9 +94,9 @@ class Tile:
         say = 1
         x = 0
         types = [
-            ["Grass", getattr(Tile, "set_to_grass")],
-            ["Sand", getattr(Tile, "set_to_sand")],
-            ["Wall",getattr(Tile, "set_to_wall")],
+            "Grass",
+            "Sand",
+            "Wall",
             ]
         while True:
             time.sleep(0.1)
@@ -115,10 +115,24 @@ class Tile:
                         x = main.selector(types, x, go="down")
                         say = 1
                     if event.key == pygame.K_RETURN:
-                        tolk.output(f"set to {types[x][0]}.")
+                        tolk.output(f"set to {types[x]}.")
                         return types[x]
                     if event.key == pygame.K_ESCAPE:
                         return
+    def set_to_grass(self):
+        self.type = "Grass"
+    def set_to_sand(self):
+        self.type = "Sand"
+    def set_to_wall(self):
+        self.type = "Wall"
+    def set_tiletype(self, value):
+        if value == "Grass": self.set_to_grass()
+        if value == "Sand": self.set_to_sand()
+        if value == "Wall": self.set_to_wall() 
+    def say_type(self):
+        tolk.output(f"{self.type}.")
+    def update(self):
+        pass
 
 
 class Main:
@@ -130,39 +144,109 @@ class Main:
         self.world = None
     
     
+    def _walk(self):
+        tolk.output(f"Starting.")
+        self.player = self.world.players[0]
+        while True:
+            pygame.time.Clock().tick(60)
+            self.ctime = pygame.time.get_ticks()
+            [it.update() for it in self.players]
+            self.key_pressed = pygame.key.get_pressed()
+            self.alt = self.key_pressed[226]
+            self.ctrl = self.key_pressed[224] or self.key_pressed[228]
+            self.shift = self.key_pressed[225] or self.key_pressed[229]
+            self.keys_object_movement()
+            for event in pygame.event.get():
+                self.keys_set_degree(event)
+                if event.type == pygame.KEYDOWN:
+                    self.keys_global(event)
+                    if self.key_pressed[pygame.K_F12]:
+                        Pdb().set_trace()
+                        tolk.output(f"Debug On.")
+                    if self.key_pressed[pygame.K_ESCAPE]:
+                        return
+    def _edit_map(self):
+        self.wmap = self.world.map
+        self.pos = self.wmap[0][0]
+        self.y, self.x = 0, 0
+        self.xrange = 0
+        self.yrange = 0
+        self.tiles = []
+        while  True:
+            pygame.time.Clock().tick(60)
+            self.key_pressed = pygame.key.get_pressed()
+            for event in pygame.event.get():
+                if event.type == pygame.KEYDOWN:
+                    self.keys_map_editor(event)
+                    if self.key_pressed[pygame.K_F12]:
+                        Pdb().set_trace()
+                        tolk.output(f"Debug On.")
+                    if self.key_pressed[pygame.K_ESCAPE]:
+                        return
+
+
+
     def get_radians(self, degrees):
         return (
             math.cos(math.radians(degrees)), 
             math.sin(math.radians(degrees))
             )
     
-    def global_keys(self, event):
+    def keys_global(self, event):
         if event.key == pygame.K_x:
             self.player.say_cdt()
-    def movement_keys(self, evt):
+    def keys_map_editor(self, event):
+        self.set_tile(event)        
+        # Map movement.
+        if event.key == pygame.K_UP:
+            if self.y > 0: 
+                self.y -= 1
+                self.set_map_move()
+            else:
+                tolk.output("End.")
+        if event.key == pygame.K_DOWN:
+            if self.y < len(self.world.map) - 1: 
+                self.y += 1
+                self.set_map_move()
+            else:
+                tolk.output("End.")
+        if event.key == pygame.K_LEFT:
+            if self.x > 0: 
+                self.x -= 1
+                self.set_map_move()
+            else:
+                tolk.output("End.")
+        if event.key == pygame.K_RIGHT:
+            if self.x < len(self.world.map[0]) - 1: 
+                self.x += 1
+                self.set_map_move()
+            else:
+                tolk.output("End.")
+    def keys_object_movement(self):
         if self.key_pressed[pygame.K_UP] and self.key_pressed[pygame.K_RSHIFT] == 0:
             self.Move_unit(self.player)
         if self.key_pressed[pygame.K_DOWN]:
             self.Move_unit(self.player, 1)
-        if evt.type == pygame.KEYDOWN:
-            if evt.key == pygame.K_LEFT: 
-                if self.key_pressed[pygame.K_RCTRL]: self.player.degrees -= 90
-                elif self.key_pressed[pygame.K_RSHIFT]: self.player.degrees -= 45
-                else: self.player.degrees -= 1
-                if self.player.degrees < 0: self.player.degrees += 361
+    def keys_set_degree(self, event):
+        if event.key == pygame.K_LEFT: 
+            if self.key_pressed[pygame.K_RCTRL]: self.player.degrees -= 90
+            elif self.key_pressed[pygame.K_RSHIFT]: self.player.degrees -= 45
+            else: self.player.degrees -= 1
+            if self.player.degrees < 0: self.player.degrees += 361
+            self.player.say_degrees()
+        if event.key == pygame.K_RIGHT:
+            if self.key_pressed[pygame.K_RCTRL]: self.player.degrees += 90
+            elif self.key_pressed[pygame.K_RSHIFT]: 
+                self.player.degrees += 45
+            else: self.player.degrees += 1
+            if self.player.degrees > 360: self.player.degrees -= 361
+            self.player.say_degrees()
+        if event.key == pygame.K_UP:
+            if self.key_pressed[pygame.K_RSHIFT]: 
+                self.player.degrees += 180
+                if self.player.degrees > 360: self.player.degrees -= 360
                 self.player.say_degrees()
-            if evt.key == pygame.K_RIGHT:
-                if self.key_pressed[pygame.K_RCTRL]: self.player.degrees += 90
-                elif self.key_pressed[pygame.K_RSHIFT]: 
-                    self.player.degrees += 45
-                else: self.player.degrees += 1
-                if self.player.degrees > 360: self.player.degrees -= 361
-                self.player.say_degrees()
-            if evt.key == pygame.K_UP:
-                if self.key_pressed[pygame.K_RSHIFT]: 
-                    self.player.degrees += 180
-                    if self.player.degrees > 360: self.player.degrees -= 360
-                    self.player.say_degrees()
+    
     def load_map(self, location, filext, saved=0):
         x = 0
         say = 1
@@ -236,6 +320,10 @@ class Main:
                         tolk.output(f"debug off.", 1)
                     if event.key == pygame.K_ESCAPE:
                         return
+    def map_info(self):
+        self.pos.update()
+        self.pos.say_type()
+        if self.pos in self.tiles: tolk.output(f"Selected.")
     def Move_unit(self, unit, backward=0):
         if unit.can_walk():
             unit._countdown = self.ctime + unit.countdown
@@ -247,26 +335,7 @@ class Main:
             self.player.y += radians[0]
             self.player.x += radians[1]
             loadsound(choice(unit.foot))
-    def run(self):
-        tolk.output(f"Starting.")
-        self.player = self.world.players[0]
-        while True:
-            pygame.time.Clock().tick(60)
-            self.ctime = pygame.time.get_ticks()
-            [it.update() for it in self.players]
-            self.key_pressed = pygame.key.get_pressed()
-            self.alt = self.key_pressed[226]
-            self.ctrl = self.key_pressed[224] or self.key_pressed[228]
-            self.shift = self.key_pressed[225] or self.key_pressed[229]
-            for event in pygame.event.get():
-                self.global_keys(event)
-                self.movement_keys(event)
-                if event.type == pygame.KEYDOWN:
-                    if self.key_pressed[pygame.K_F12]:
-                        Pdb().set_trace()
-                        tolk.output(f"Debug On.")
-                    if self.key_pressed[pygame.K_ESCAPE]:
-                        return
+    
     def selector(self, item, x, go='', wrap=0):
         tolk.silence()
         if len(item) == 0:
@@ -291,22 +360,30 @@ class Main:
             else:
                 x += 1
                 return x
-    def set_tiles(self, event):
-        if event.key == pygame.K_F1:
-            pass
+    def set_map_move(self):
+        self.pos = self.world.map[self.y][self.x]
+        self.map_info()
+
+    def set_tile(self, event):
+        try:
+            if event.key == pygame.K_F1:
+                pass
+        except Exception: Pdb().set_trace()
         if event.key == pygame.K_c:
             pass
         if event.key == pygame.K_g:
             pass
-        if self.shift and event.key == pygame.K_s:
+        if event.key == pygame.K_s:
             tolk.output(f"{len(self.tiles)} tiles selected.")
             return
         if event.key == pygame.K_t:
-            tiletype = Tile .get_type()
-            for it in self.tiles:
-                it.tiletype()
-        if event.key == pygame.K_z:
-            tolk.output(f"{len(self.tiles)} tiles selected.")        
+            if len(self.tiles) == 0:
+                tolk.output(f"No tiles selected.")
+                return
+            tiletype = self.pos.get_type()
+            [it.set_tiletype(tiletype) for it in self.tiles]
+        if event.key == pygame.K_x:
+            tolk.output(f"Y {self.y}, X {self.x}.")
         if event.key == pygame.K_PAGEUP:
             self.xrange -= 1
             tolk.output(f"X range: {self.xrange}.")
@@ -323,13 +400,11 @@ class Main:
             self.yrange =0
             self.xrange = 0
             tolk.output(f"Ranges reseted.")
-        if event.key == pygame.K_F1:
-            self.world.debug()
         if event.key == pygame.K_BACKSPACE:
             self.tiles = []
-            self.capital = []
             tolk.output(f"Cleaned.", 1)
-        if self.shift and event.key == pygame.K_SPACE:
+        if event.key == pygame.K_SPACE:
+            tolk.silence()
             xrange = [self.x, self.x + self.xrange]
             xrange = range(min(xrange), max(xrange) + 1)
             yrange = [self.y, self.y + self.yrange]
@@ -337,53 +412,11 @@ class Main:
             wmap = self.world.map
             for y in range(len(wmap)):
                 for x in range(len(wmap[y])):
-                    if wmap[y][x].tiles: continue
-                    if wmap[y][x].capital: continue
                     if wmap[y][x] in self.tiles: continue
                     if y in yrange and x in xrange:
                         self.tiles += [wmap[y][x]]
             tolk.output(f"{len(self.tiles)}tiles selected.")
             return
-        if event.key == pygame.K_SPACE:
-            tolk.silence()
-            if self.pos in self.tiles:
-                self.tiles.remove(self.pos)
-                tolk.output(f"removed.", 1)
-                return
-            elif self.pos not in self.tiles and self.pos.tiles == [] and self.pos.capital is None:
-                self.tiles += [self.pos]
-                tolk.output(f"added.", 1)
-            elif self.pos not in self.tiles and self.pos.tiles:
-                tolk.output(f"Expanding.")
-                self.tiles = self.pos.tiles + [self.pos]
-                self.capital = self.pos
-        if event.key == pygame.K_DELETE:
-            self.pos.name = None
-            self.pos.type = None
-            for tl in self.pos.tiles:
-                tl.capital = None
-                tl.name = None
-                tl.type = None
-            self.pos.tiles = []
-            self.pos.capital = None
-        if event.key == pygame.K_RETURN:
-            if self.capital is None:
-                tolk.output(f"capital need.", 1)
-                return
-            if len(self.tiles) < 4:
-                tolk.output(f"Needs 2 or more tiles to create a province.")
-                return
-            tolk.output(f"seting.", 1)
-            self.capital.tiles = [it for it in self.tiles]
-            self.capital.set_name()
-            tolk.output(f"{self.pos.name}.")
-            for it in self.tiles:
-                if it != self.capital: it.capital = self.capital
-                it.size = len(self.tiles)
-            self.capital = None
-            self.tiles = []
-            self.world.update()
-
     def start_menu(self):
         say = 1
         x = 0
@@ -416,42 +449,21 @@ class Main:
                         if x == 0:                       
                             say = 1
                             self.load_map("maps//", "/*.map")
+                            if self.world:
+                                self._walk()
                         if x == 1:
-                            self.multiplayer_menu()
-                        if x == 2:
                             say = 1
-                            self.making_regions = 1
                             self.loading_map("maps//", "/*.map")
                             if self.world:
-                                self.pos = self.world.map[0][0]
-                                self.run()
-                        if x == 3:
-                            self.making_regions = 1
+                                self._edit_map()
+                        if x == 2:
+                            say = 1
                             self.world = World()
-                            self.world.game = self
-                            self.world.create()
-                            
-                            self.run()
+                            self.world.new_world()
+                            self._edit_map()
                     if event.key == pygame.K_ESCAPE:
                         exit()
-    def tile_editor(self):
-        self.wmap = self.world.map
-        self.pos = self.wmap[0][0]
-        self.y, self.x = 0, 0
-        while  True:
-            pygame.time.Clock().tick(60)
-            self.key_pressed = pygame.key.get_pressed()
-            for event in pygame.event.get():
-                self.tile_editor_keys(event)
-                if event.type == pygame.KEYDOWN:
-                    if self.key_pressed[pygame.K_F12]:
-                        Pdb().set_trace()
-                        tolk.output(f"Debug On.")
-                    if self.key_pressed[pygame.K_ESCAPE]:
-                        return
-
-
-
+    
 if __name__ == "__main__":
     main = Main()    
     main.start_menu()
