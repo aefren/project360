@@ -1,4 +1,4 @@
-''  # !/usr/bin/env python
+
 # -*- coding: utf-8 -*-
 import os
 from glob import glob
@@ -40,7 +40,6 @@ mixer = pygame.mixer
 pygame.mixer.pre_init(frequency=44100, size=32, channels=2, buffer=500)
 pygame.init()
 
-
 class Player:
     def __init__(self, name):
         self.name = name
@@ -80,12 +79,11 @@ class World:
             for x in range(0, self.width, 1):
                 self.map[y].append(Tile())
         main.pos = self.map[0][0]
-        main.x = 0
         main.y = 0
+        main.x = 0
+        pass
     def update(self):
         pass
-
-
 
 class Tile:
     def __init__(self):
@@ -111,10 +109,10 @@ class Tile:
             for event in pygame.event.get():
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_UP:
-                        x = game.selector(types, x, go="up")
+                        x = main.selector(types, x, go="up")
                         say = 1
                     if event.key == pygame.K_DOWN:
-                        x = game.selector(types, x, go="down")
+                        x = main.selector(types, x, go="down")
                         say = 1
                     if event.key == pygame.K_RETURN:
                         tolk.output(f"set to {types[x][0]}.")
@@ -122,9 +120,12 @@ class Tile:
                     if event.key == pygame.K_ESCAPE:
                         return
 
+
 class Main:
     def __init__(self, size=[1024, 768]):
-        self.name = 1
+        pygame.init()
+        pygame.display.set_mode(size)
+        pygame.display.set_caption("Project360")
         self.making_map = 0
         self.world = None
     
@@ -258,16 +259,14 @@ class Main:
             self.ctrl = self.key_pressed[224] or self.key_pressed[228]
             self.shift = self.key_pressed[225] or self.key_pressed[229]
             for event in pygame.event.get():
-                self.global_keys(event
+                self.global_keys(event)
                 self.movement_keys(event)
-                if evt.type == pygame.KEYDOWN:
+                if event.type == pygame.KEYDOWN:
                     if self.key_pressed[pygame.K_F12]:
                         Pdb().set_trace()
                         tolk.output(f"Debug On.")
                     if self.key_pressed[pygame.K_ESCAPE]:
                         return
-
-
     def selector(self, item, x, go='', wrap=0):
         tolk.silence()
         if len(item) == 0:
@@ -276,26 +275,22 @@ class Main:
             if x == 0 and wrap == 1:
                 x = len(item) - 1
                 return x
-
             if x == 0 and wrap == 0:
                 tolk.output(f"End", 1)
                 return x
             else:
                 x -= 1
                 return x
-
         if go == 'down':
             if x == len(item) - 1 and wrap:
                 x = 0
                 return x
-
             if x == len(item) - 1 and wrap == 0:
                 tolk.output(f"End", 1)
                 return x
             else:
                 x += 1
                 return x
-
     def set_tiles(self, event):
         if event.key == pygame.K_F1:
             pass
@@ -393,9 +388,10 @@ class Main:
         say = 1
         x = 0
         options = [
-            "Explore",
+            "Explore.",
             "map editor.",
-            "Map creator."]
+            "Map creator."
+            ]
         while True:
             pygame.time.Clock().tick(60)
             if say:
@@ -440,23 +436,22 @@ class Main:
                         exit()
     def tile_editor(self):
         self.wmap = self.world.map
-        self.pos = self.wmap[0][0]]
+        self.pos = self.wmap[0][0]
         self.y, self.x = 0, 0
         while  True:
             pygame.time.Clock().tick(60)
             self.key_pressed = pygame.key.get_pressed()
             for event in pygame.event.get():
                 self.tile_editor_keys(event)
-                if evt.type == pygame.KEYDOWN:
+                if event.type == pygame.KEYDOWN:
                     if self.key_pressed[pygame.K_F12]:
                         Pdb().set_trace()
                         tolk.output(f"Debug On.")
                     if self.key_pressed[pygame.K_ESCAPE]:
                         return
-    def (self):
-        pass
 
-    
+
+
 if __name__ == "__main__":
-    
-    main = Main().start_menu()
+    main = Main()    
+    main.start_menu()
