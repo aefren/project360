@@ -58,9 +58,13 @@ class Player:
     def say_degrees(self):
         tolk.output(f"{self.degrees}.",1)
     def say_cdt(self):
-        tolk.output(f"y {round(self.y, 3)}, x {round(self.x, 3)}.",1)
+        y = str(self.y)
+        y = y[:y.rfind(".")+2]
+        x = str(self.x)
+        x = x[:x.rfind(".")+2]
+        tolk.output(f"y {y}, x {x}.",1)
     def update(self):
-        self.ctime = self.main.ctime
+        self.ctime = main.ctime
 
 
 class World:
@@ -146,19 +150,20 @@ class Main:
     
     def _walk(self):
         tolk.output(f"Starting.")
-        self.player = self.world.players[0]
+        #self.player = self.world.players[0]
+        self.player = Player("Player 1")
         while True:
             pygame.time.Clock().tick(60)
             self.ctime = pygame.time.get_ticks()
-            [it.update() for it in self.players]
+            self.player.update()
             self.key_pressed = pygame.key.get_pressed()
             self.alt = self.key_pressed[226]
             self.ctrl = self.key_pressed[224] or self.key_pressed[228]
             self.shift = self.key_pressed[225] or self.key_pressed[229]
             self.keys_object_movement()
             for event in pygame.event.get():
-                self.keys_set_degree(event)
                 if event.type == pygame.KEYDOWN:
+                    self.keys_set_degree(event)
                     self.keys_global(event)
                     if self.key_pressed[pygame.K_F12]:
                         Pdb().set_trace()
@@ -223,30 +228,27 @@ class Main:
             else:
                 tolk.output("End.")
     def keys_object_movement(self):
-        if self.key_pressed[pygame.K_UP] and self.key_pressed[pygame.K_RSHIFT] == 0:
+        if self.key_pressed[pygame.K_w]:
             self.Move_unit(self.player)
-        if self.key_pressed[pygame.K_DOWN]:
+        if self.key_pressed[pygame.K_s]:
             self.Move_unit(self.player, 1)
     def keys_set_degree(self, event):
-        if event.key == pygame.K_LEFT: 
-            if self.key_pressed[pygame.K_RCTRL]: self.player.degrees -= 90
-            elif self.key_pressed[pygame.K_RSHIFT]: self.player.degrees -= 45
-            else: self.player.degrees -= 1
-            if self.player.degrees < 0: self.player.degrees += 361
+        if event.key == pygame.K_a: 
+            if self.key_pressed[pygame.K_RSHIFT] \
+            or self.key_pressed[pygame.K_LSHIFT]: self.player.degrees -= 180
+            else: self.player.degrees -= 45
+            if self.player.degrees < 0: self.player.degrees += 360
+            #if self.player.degrees == 316: self.player.degrees = 315
+            #if self.player.degrees == 181: self.player.degrees = 180
             self.player.say_degrees()
-        if event.key == pygame.K_RIGHT:
-            if self.key_pressed[pygame.K_RCTRL]: self.player.degrees += 90
-            elif self.key_pressed[pygame.K_RSHIFT]: 
-                self.player.degrees += 45
-            else: self.player.degrees += 1
-            if self.player.degrees > 360: self.player.degrees -= 361
-            self.player.say_degrees()
-        if event.key == pygame.K_UP:
-            if self.key_pressed[pygame.K_RSHIFT]: 
+        if event.key == pygame.K_d:
+            if self.key_pressed[pygame.K_RSHIFT]\
+            or self.key_pressed[pygame.K_LSHIFT]: 
                 self.player.degrees += 180
-                if self.player.degrees > 360: self.player.degrees -= 360
-                self.player.say_degrees()
-    
+            else: self.player.degrees += 45
+            if self.player.degrees > 360: self.player.degrees -= 360
+            if self.player.degrees == 360: self.player.degrees = 0
+            self.player.say_degrees()
     def load_map(self, location, filext, saved=0):
         x = 0
         say = 1
@@ -332,8 +334,8 @@ class Main:
                 degrees += 180
                 if degrees > 360: degrees -= 361
             radians = self.get_radians(degrees)
-            self.player.y += radians[0]
-            self.player.x += radians[1]
+            self.player.y += round(radians[0],2)
+            self.player.x += round(radians[1],2)
             loadsound(choice(unit.foot))
     
     def selector(self, item, x, go='', wrap=0):
@@ -448,9 +450,9 @@ class Main:
                     if event.key == pygame.K_RETURN:
                         if x == 0:                       
                             say = 1
-                            self.load_map("maps//", "/*.map")
-                            if self.world:
-                                self._walk()
+                            #self.load_map("maps//", "/*.map")
+                            #if self.world:
+                            self._walk()
                         if x == 1:
                             say = 1
                             self.loading_map("maps//", "/*.map")
