@@ -41,27 +41,38 @@ pygame.mixer.pre_init(frequency=44100, size=32, channels=2, buffer=500)
 pygame.init()
 
 class Player:
-    def __init__(self, name):
+    def __init__(self, name, y, x, degrees):
         self.name = name
-        self.y = 10
-        self.x = 10
-        self.degrees = 0
+        self.y = y
+        self.x = x
+        self.degrees = degrees
         self.countdown = 500
         self._countdown = 0
         self.foot = [
-            "foot01", 
-            "foot02", 
-            "foot03", 
-            "foot04"]
+            ]
+        self.passable_floor = ["Grass", "Sand"]
+        self.passable_wall = [None]
+    def can_pass(self, destination):
+        floor = None 
+        wall = None
+        if destination.floor not in self.passable_floor:
+            floor = f"Can not pass {destination.floor} floor.."
+        if destination.wall not in self.passable_wall:
+            wall = f"Can not pass {destination.wall} wall.." 
+        if floor or wall:
+            if floor: tolk.output(floor)
+            if wall: tolk.output(wall)
+            return False
+        else: return True
     def can_walk(self):
         if self.ctime > self._countdown: return 1
     def say_degrees(self):
         tolk.output(f"{self.degrees}.",1)
     def say_cdt(self):
         y = str(self.y)
-        y = y[:y.rfind(".")+2]
+        y = y[:y.rfind(".")+3]
         x = str(self.x)
-        x = x[:x.rfind(".")+2]
+        x = x[:x.rfind(".")+3]
         tolk.output(f"y {y}, x {x}.",1)
     def update(self):
         self.ctime = main.ctime
@@ -71,12 +82,16 @@ class World:
     def __init__(self):
         self.name = None
         self.tiles = []
+        self.players = [
+            Player(name = "Player1", y=20, x=20, degrees=90)
+            ]
+    
     def new_world(self):
         tolk.output(f"creating world.", 1)
         self.name = "Map 1"
-        #self.ext = ".map"
-        self.height = 50
-        self.width = 50
+        self.ext = ".map"
+        self.height = 500
+        self.width = 500
         self.map = []
         for y in range(0, self.height, 1):
             self.map.append([])
@@ -92,7 +107,8 @@ class World:
 class Tile:
     def __init__(self):
         self.name = ""
-        self.type = "Grass"
+        self.floor = "Sand"
+        self.wall = "Wall"
         self.steps = []
     def get_type(self):
         say = 1
@@ -124,17 +140,29 @@ class Tile:
                     if event.key == pygame.K_ESCAPE:
                         return
     def set_to_grass(self):
-        self.type = "Grass"
+        self.floor = "Grass"
+        self.wall = None
     def set_to_sand(self):
-        self.type = "Sand"
+        self.floor = "Sand"
+        self.wall = None
+        self.foot_floor = [
+            "foot01", 
+            "foot02", 
+            "foot03", 
+            "foot04"
+            ]
+        self.foot_wall = [
+            ]
     def set_to_wall(self):
-        self.type = "Wall"
+        self.floor = "Sand"
+        self.wall = "Wall"
     def set_tiletype(self, value):
         if value == "Grass": self.set_to_grass()
         if value == "Sand": self.set_to_sand()
         if value == "Wall": self.set_to_wall() 
     def say_type(self):
-        tolk.output(f"{self.type}.")
+        tolk.output(f"{self.floor}.")
+        if self.wall: tolk.output(f"{self.wall}.")
     def update(self):
         pass
 
@@ -150,8 +178,8 @@ class Main:
     
     def _walk(self):
         tolk.output(f"Starting.")
-        #self.player = self.world.players[0]
-        self.player = Player("Player 1")
+        self.player = self.world.players[0]
+        self.wmap = self.world.map
         while True:
             pygame.time.Clock().tick(60)
             self.ctime = pygame.time.get_ticks()
@@ -165,9 +193,10 @@ class Main:
                 if event.type == pygame.KEYDOWN:
                     self.keys_set_degree(event)
                     self.keys_global(event)
-                    if self.key_pressed[pygame.K_F12]:
-                        Pdb().set_trace()
+                    if event.key == pygame.K_F12:
                         tolk.output(f"Debug On.")
+                        Pdb().set_trace()
+                        tolk.output(f"Debug Off.")
                     if self.key_pressed[pygame.K_ESCAPE]:
                         return
     def _edit_map(self):
@@ -183,33 +212,94 @@ class Main:
             for event in pygame.event.get():
                 if event.type == pygame.KEYDOWN:
                     self.keys_map_editor(event)
-                    if self.key_pressed[pygame.K_F12]:
-                        Pdb().set_trace()
+                    if event.key == pygame.K_F12:
                         tolk.output(f"Debug On.")
+                        Pdb().set_trace()
+                        tolk.output(f"Debug Off.")
                     if self.key_pressed[pygame.K_ESCAPE]:
                         return
 
 
 
+    def get_i2d(self, lst, obj,timer=0):
+        if timer:print(f"index starts at {pygame.time.get_ticks()}.")
+        for y in range(len(lst)):
+            for x in range(len(lst[y])):
+                if lst[y][x] == obj: 
+                    location = y, x
+                    if timer: print(f"ends at {pygame.time.get_ticks()}.") 
+                    return location 
     def get_radians(self, degrees):
         return (
             math.cos(math.radians(degrees)), 
             math.sin(math.radians(degrees))
             )
     
+    
+    def keys_edit_tile(self, event):
+        if event.key == pygame.K_F9:
+            self.save_map()
+        if event.key == pygame.K_c:
+            pass
+        if event.key == pygame.K_g:
+            pass
+        if event.key == pygame.K_s:
+            tolk.output(f"{len(self.tiles)} tiles selected.")
+            return
+        if event.key == pygame.K_t:
+            if len(self.tiles) == 0:
+                tolk.output(f"No tiles selected.")
+                return
+            tiletype = self.pos.get_type()
+            [it.set_tiletype(tiletype) for it in self.tiles]
+        if event.key == pygame.K_x:
+            tolk.output(f"Y {self.y}, X {self.x}.")
+        if event.key == pygame.K_PAGEUP:
+            self.xrange -= 1
+            tolk.output(f"X range: {self.xrange}.")
+        if event.key == pygame.K_PAGEDOWN:
+            self.xrange += 1
+            tolk.output(f"X range: {self.xrange}.")
+        if event.key == pygame.K_HOME:
+            self.yrange -= 1
+            tolk.output(f"Y range: {self.yrange}.")
+        if event.key == pygame.K_END:
+            self.yrange += 1
+            tolk.output(f"Y range: {self.yrange}.")
+        if event.key == pygame.K_DELETE:
+            self.yrange =0
+            self.xrange = 0
+            tolk.output(f"Ranges reseted.")
+        if event.key == pygame.K_BACKSPACE:
+            self.tiles = []
+            tolk.output(f"Cleaned.", 1)
+        if event.key == pygame.K_SPACE:
+            tolk.silence()
+            xrange = [self.x, self.x + self.xrange]
+            xrange = range(min(xrange), max(xrange) + 1)
+            yrange = [self.y, self.y + self.yrange]
+            yrange = range(min(yrange), max(yrange) + 1)
+            wmap = self.world.map
+            for y in range(len(wmap)):
+                for x in range(len(wmap[y])):
+                    if wmap[y][x] in self.tiles: continue
+                    if y in yrange and x in xrange:
+                        self.tiles += [wmap[y][x]]
+            tolk.output(f"{len(self.tiles)}tiles selected.")
+            return
     def keys_global(self, event):
         if event.key == pygame.K_x:
             self.player.say_cdt()
     def keys_map_editor(self, event):
-        self.set_tile(event)        
+        self.keys_edit_tile(event)        
         # Map movement.
-        if event.key == pygame.K_UP:
+        if event.key == pygame.K_DOWN:
             if self.y > 0: 
                 self.y -= 1
                 self.set_map_move()
             else:
                 tolk.output("End.")
-        if event.key == pygame.K_DOWN:
+        if event.key == pygame.K_UP:
             if self.y < len(self.world.map) - 1: 
                 self.y += 1
                 self.set_map_move()
@@ -229,9 +319,9 @@ class Main:
                 tolk.output("End.")
     def keys_object_movement(self):
         if self.key_pressed[pygame.K_w]:
-            self.Move_unit(self.player)
+            self.Move_object(self.player)
         if self.key_pressed[pygame.K_s]:
-            self.Move_unit(self.player, 1)
+            self.Move_object(self.player, 1)
     def keys_set_degree(self, event):
         if event.key == pygame.K_a: 
             if self.key_pressed[pygame.K_RSHIFT] \
@@ -326,18 +416,40 @@ class Main:
         self.pos.update()
         self.pos.say_type()
         if self.pos in self.tiles: tolk.output(f"Selected.")
-    def Move_unit(self, unit, backward=0):
+    def Move_object(self, unit, backward=0):
         if unit.can_walk():
             unit._countdown = self.ctime + unit.countdown
+            y = unit.y
+            x = unit.x
             degrees = unit.degrees
             if backward:
                 degrees += 180
                 if degrees > 360: degrees -= 361
             radians = self.get_radians(degrees)
-            self.player.y += round(radians[0],2)
-            self.player.x += round(radians[1],2)
-            loadsound(choice(unit.foot))
+            y += radians[0]
+            x += radians[1]
+            destination = self.wmap[int(y)][int(x)]
+            if unit.can_pass(destination):
+                self.player.y, self.player.x = y, x
+                if destination.foot_floor: loadsound(choice(unit.foot))
+            else: 
+                tolk.output(f"Can not move there.",1)
+                if destination.foot_wall: 
+                    loadsound(choice(destination.foot_wall))
     
+    def save_map(self):
+        tolk.output("Saving map.",1)
+        self.world.update()
+        file = open(
+            os.path.join("maps//") +
+            self.world.name +
+            self.world.ext,
+            "wb")
+        file.write(pickle.dumps(self.world))
+        file.close()
+        tolk.output(f"map saved.",1)
+        time.sleep(1)
+
     def selector(self, item, x, go='', wrap=0):
         tolk.silence()
         if len(item) == 0:
@@ -366,59 +478,7 @@ class Main:
         self.pos = self.world.map[self.y][self.x]
         self.map_info()
 
-    def set_tile(self, event):
-        try:
-            if event.key == pygame.K_F1:
-                pass
-        except Exception: Pdb().set_trace()
-        if event.key == pygame.K_c:
-            pass
-        if event.key == pygame.K_g:
-            pass
-        if event.key == pygame.K_s:
-            tolk.output(f"{len(self.tiles)} tiles selected.")
-            return
-        if event.key == pygame.K_t:
-            if len(self.tiles) == 0:
-                tolk.output(f"No tiles selected.")
-                return
-            tiletype = self.pos.get_type()
-            [it.set_tiletype(tiletype) for it in self.tiles]
-        if event.key == pygame.K_x:
-            tolk.output(f"Y {self.y}, X {self.x}.")
-        if event.key == pygame.K_PAGEUP:
-            self.xrange -= 1
-            tolk.output(f"X range: {self.xrange}.")
-        if event.key == pygame.K_PAGEDOWN:
-            self.xrange += 1
-            tolk.output(f"X range: {self.xrange}.")
-        if event.key == pygame.K_HOME:
-            self.yrange -= 1
-            tolk.output(f"Y range: {self.yrange}.")
-        if event.key == pygame.K_END:
-            self.yrange += 1
-            tolk.output(f"Y range: {self.yrange}.")
-        if event.key == pygame.K_DELETE:
-            self.yrange =0
-            self.xrange = 0
-            tolk.output(f"Ranges reseted.")
-        if event.key == pygame.K_BACKSPACE:
-            self.tiles = []
-            tolk.output(f"Cleaned.", 1)
-        if event.key == pygame.K_SPACE:
-            tolk.silence()
-            xrange = [self.x, self.x + self.xrange]
-            xrange = range(min(xrange), max(xrange) + 1)
-            yrange = [self.y, self.y + self.yrange]
-            yrange = range(min(yrange), max(yrange) + 1)
-            wmap = self.world.map
-            for y in range(len(wmap)):
-                for x in range(len(wmap[y])):
-                    if wmap[y][x] in self.tiles: continue
-                    if y in yrange and x in xrange:
-                        self.tiles += [wmap[y][x]]
-            tolk.output(f"{len(self.tiles)}tiles selected.")
-            return
+    
     def start_menu(self):
         say = 1
         x = 0
@@ -450,12 +510,12 @@ class Main:
                     if event.key == pygame.K_RETURN:
                         if x == 0:                       
                             say = 1
-                            #self.load_map("maps//", "/*.map")
-                            #if self.world:
-                            self._walk()
+                            self.load_map("maps//", "/*.map")
+                            if self.world:
+                                self._walk()
                         if x == 1:
                             say = 1
-                            self.loading_map("maps//", "/*.map")
+                            self.load_map("maps//", "/*.map")
                             if self.world:
                                 self._edit_map()
                         if x == 2:
