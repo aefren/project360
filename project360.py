@@ -3,9 +3,8 @@ import os
 from glob import glob
 import math
 import sys
-#import openal
+import synthizer as syn
 import os
-#import json
 import pickle
 import pygame
 import natsort
@@ -15,7 +14,6 @@ import time
 from cytolk import tolk
 from pdb import Pdb
 from random import choice, randint, uniform, shuffle
-#from statistics import mean, median
 
 tolk.load()
 
@@ -43,12 +41,8 @@ pygame.mixer.pre_init(frequency=44100, size=32, channels=2, buffer=500)
 pygame.init()
 
 class Player:
-    def __init__(self, name, y, x, degrees):
-        self.name = name
-        self.y = y
-        self.x = x
-        self.degrees = degrees
-        self.countdown = 500
+    def __init__(self):
+        self.countdown = 400
         self._countdown = 0
         self.foot = [
             ]
@@ -71,11 +65,17 @@ class Player:
     def say_degrees(self):
         tolk.output(f"{self.degrees}.",1)
     def say_cdt(self):
-        y = str(self.y)
-        y = y[:y.rfind(".")+3]
-        x = str(self.x)
+        x = str(self.position[0])
         x = x[:x.rfind(".")+3]
+        y = str(self.position[1])
+        y = y[:y.rfind(".")+3]
         tolk.output(f"y {y}, x {x}.",1)
+    def set_name(self, name):
+        self.name = name
+    def set_degrees(self, degrees):
+        self.degrees = degrees
+    def set_position(self, position=[]):
+        self.position = position
     def update(self):
         self.ctime = main.ctime
 
@@ -83,11 +83,23 @@ class Player:
 class World:
     def __init__(self):
         self.name = None
+        self.players = []
         self.tiles = []
-        self.players = [
-            Player(name="Player1", y=12, x=12, degrees=90)
-            ]
     
+    def add_player(self, degrees, name, position=[]):
+        player = Player()
+        player.set_degrees(degrees)
+        player.set_name(name)
+        player.set_position(position)
+        self.players += [player]
+    def add_tileattr(self):
+        for y in self.map:
+            for it in y:
+                it.ambient = []
+                it.items = []
+                it.blocked = 0
+                it.map = None
+                it.sonar = None
     def new_world(self):
         tolk.output(f"creating world.", 1)
         self.name = "Map 2"
@@ -122,6 +134,7 @@ class Tile:
         self.map = None
         self.sonar = None
         self.wall = "Wall"
+    
     def get_type(self):
         say = 1
         x = 0
@@ -192,27 +205,36 @@ class Tile:
 
 class Main:
     def __init__(self, size=[1024, 768]):
+        # Pygame initial settings.
         pygame.init()
         pygame.display.set_mode(size)
         pygame.display.set_caption("Project360")
+        
+        # Synthizer initial settings
+        syn.initialize()
+        self.ctx = syn.Context()
+        self.ctx.default_panner_strategy.value = syn.PannerStrategy.HRTF
+        self.ctx.position.value = 0, 0, 0
+        
+        # Other initial settings.
         self.making_map = 0
         self.world = None
     
     
     def _walk(self):
-        tolk.output(f"Starting.")
+        tolk.output(f"Started.")
         self.world.restart_tiles()
+        self.world.add_player(90, "player1", [20, 20, 0])
         self.player = self.world.players[0]
         self.wmap = self.world.map
-        self.pos = self.wmap[self.player.y][self.player.x]
+        self.pos = self.wmap[self.player.position[0]][self.player.position[1]]
+        self.init_source3d()
         while True:
             pygame.time.Clock().tick(60)
             self.ctime = pygame.time.get_ticks()
             self.player.update()
-            self.key_pressed = pygame.key.get_pressed()
-            self.alt = self.key_pressed[226]
-            self.ctrl = self.key_pressed[224] or self.key_pressed[228]
-            self.shift = self.key_pressed[225] or self.key_pressed[229]
+            self.get_pressed_keys()
+            self.ctx.position.value = self.player.position
             self.keys_object_movement()
             for event in pygame.event.get():
                 if event.type == pygame.KEYDOWN:
@@ -227,14 +249,17 @@ class Main:
     def _edit_map(self):
         self.wmap = self.world.map
         self.world.restart_tiles()
+        #self.world.add_tileattr()
         self.pos = self.wmap[0][0]
         self.y, self.x = 0, 0
         self.xrange = 0
         self.yrange = 0
         self.tiles = []
+        self.init_source3d()
         while  True:
             pygame.time.Clock().tick(60)
-            self.key_pressed = pygame.key.get_pressed()
+            self.get_pressed_keys()
+            self.ctx.position.value = self.get_i2d(self.wmap, self.pos)
             for event in pygame.event.get():
                 if event.type == pygame.KEYDOWN:
                     self.keys_map_editor(event)
@@ -247,14 +272,38 @@ class Main:
 
 
 
+    def add_directsound(self, sound):
+        buffer = syn.Buffer.from_file(f"{path+sound}.wav")
+        generator = syn.BufferGenerator(self.ctx)
+        generator.buffer.value = buffer
+        generator.looping.value = 0
+        src = syn.DirectSource(self.ctx)
+        src.add_generator(generator)
+    def add_source3d(self, position, sound):
+        buffer = syn.Buffer.from_file(f"{path+sound}.wav")
+        generator = syn.BufferGenerator(self.ctx)
+        generator.buffer.value = buffer
+        generator.looping.value = 1
+        src = syn.Source3D(self.ctx, position=position)
+        src.rolloff.value = 3
+        src.distance_ref.value = 3
+        src.add_generator(generator)
+        
     def get_i2d(self, lst, obj,timer=0):
         if timer:print(f"index starts at {pygame.time.get_ticks()}.")
         for y in range(len(lst)):
             for x in range(len(lst[y])):
                 if lst[y][x] == obj: 
-                    location = y, x
+                    location = [x, y, 10]
                     if timer: print(f"ends at {pygame.time.get_ticks()}.") 
                     return location 
+    def get_pressed_keys(self):
+        self.key_pressed = pygame.key.get_pressed()
+        self.alt = self.key_pressed[pygame.K_LALT]
+        self.ctrl = self.key_pressed[pygame.K_LCTRL]
+        self.ctrl = self.key_pressed[pygame.K_RCTRL]
+        self.shift = self.key_pressed[pygame.K_LSHIFT]
+        self.shift += self.key_pressed[pygame.K_RSHIFT]
     def get_radians(self, degrees):
         return (
             math.cos(math.radians(degrees)), 
@@ -262,6 +311,15 @@ class Main:
             )
     
     
+    def init_source3d(self):
+        self.sources3d = []
+        for y in self.wmap:
+            for it in y:
+                if it.ambient:
+                    position = self.get_i2d(self.wmap, it)
+                    sound = choice(it.ambient)
+                    self.add_source3d(position, sound)
+                    
     def keys_edit_tile(self, event):
         if event.key == pygame.K_F9:
             self.save_map()
@@ -277,9 +335,11 @@ class Main:
             pass
         if event.key == pygame.K_g:
             pass
+        if event.key == pygame.K_s and self.shift:
+            self.pos.ambient = ["forest01"]
+            return
         if event.key == pygame.K_s:
             tolk.output(f"{len(self.tiles)} tiles selected.")
-            return
         if event.key == pygame.K_t:
             if len(self.tiles) == 0:
                 tolk.output(f"No tiles selected.")
@@ -317,7 +377,8 @@ class Main:
             for y in range(len(wmap)):
                 for x in range(len(wmap[y])):
                     if wmap[y][x] in self.tiles: continue
-                    if y in yrange and x in xrange and y.blocked == 0:
+                    if wmap[y][x].blocked: continue
+                    if y in yrange and x in xrange:
                         self.tiles += [wmap[y][x]]
             tolk.output(f"{len(self.tiles)}tiles selected.")
             return
@@ -453,28 +514,27 @@ class Main:
     def Move_object(self, unit, backward=0):
         if unit.can_walk():
             unit._countdown = self.ctime + unit.countdown
-            y = unit.y
-            x = unit.x
+            x = unit.position[0]
+            y = unit.position[1]
             degrees = unit.degrees
             if backward:
                 degrees += 180
                 if degrees > 360: degrees -= 361
             radians = self.get_radians(degrees)
-            y += radians[0]
             x += radians[1]
+            y += radians[0]
             destination = self.wmap[int(y)][int(x)]
             if unit.can_pass(destination):
-                self.player.y, self.player.x = y, x
-                self.pos = destination
-                try:
-                    if destination.foot_floor: 
-                        loadsound(choice(destination.foot_floor))
-                except Exception: Pdb().set_trace()
+                unit.position[0], unit.position[1], unit.position[2] = x, y, 0
+                if destination.foot_floor:
+                    sound = choice(destination.foot_floor)
+                    self.add_directsound(sound)
             else: 
                 tolk.output(f"Can not move there.",1)
                 try:
-                    if destination.foot_wall: 
-                        loadsound(choice(destination.foot_wall))
+                    if destination.foot_wall:
+                        sound = choice(destination.foot_wall)
+                        self.add_directsound(sound)
                 except Exception: Pdb().set_trace()
     
     def save_map(self):
