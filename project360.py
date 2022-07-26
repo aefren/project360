@@ -22,18 +22,10 @@ pygame.mixer.pre_init(frequency=44100, size=32, channels=2, buffer=500)
 pygame.init()
 pygame.mixer.set_num_channels(16)
 wav = '.wav'
-path = os.getcwd() + str('/data/sounds/')
+soundpath = os.getcwd() + str('/data/sounds/')
 
 
 CHT0 = pygame.mixer.Channel(0)
-
-def loadsound(soundfile, channel=CHT0, path=path, extention=wav, vol=1):
-    channel.stop()
-    if isinstance(vol, tuple): channel.set_volume(vol[0], vol[1])
-    else: channel.set_volume(vol)
-    channel.play(mixer.Sound(path + soundfile + extention))
-    return mixer.Sound(path + soundfile + extention).get_length()
-
 
 
 mixer = pygame.mixer
@@ -222,13 +214,13 @@ class Main:
     
     
     def _walk(self):
-        tolk.output(f"Started.")
         self.world.restart_tiles()
         self.world.add_player(90, "player1", [20, 20, 0])
         self.player = self.world.players[0]
         self.wmap = self.world.map
         self.pos = self.wmap[self.player.position[0]][self.player.position[1]]
         self.init_source3d()
+        tolk.output(f"Explorer.",1)
         while True:
             pygame.time.Clock().tick(60)
             self.ctime = pygame.time.get_ticks()
@@ -256,6 +248,7 @@ class Main:
         self.yrange = 0
         self.tiles = []
         self.init_source3d()
+        tolk.output(f"Editor.",1)
         while  True:
             pygame.time.Clock().tick(60)
             self.get_pressed_keys()
@@ -273,14 +266,14 @@ class Main:
 
 
     def add_directsound(self, sound):
-        buffer = syn.Buffer.from_file(f"{path+sound}.wav")
+        buffer = syn.Buffer.from_file(f"{soundpath+sound}.wav")
         generator = syn.BufferGenerator(self.ctx)
         generator.buffer.value = buffer
         generator.looping.value = 0
         src = syn.DirectSource(self.ctx)
         src.add_generator(generator)
     def add_source3d(self, position, sound):
-        buffer = syn.Buffer.from_file(f"{path+sound}.wav")
+        buffer = syn.Buffer.from_file(f"{soundpath+sound}.wav")
         generator = syn.BufferGenerator(self.ctx)
         generator.buffer.value = buffer
         generator.looping.value = 1
@@ -304,6 +297,55 @@ class Main:
         self.ctrl = self.key_pressed[pygame.K_RCTRL]
         self.shift = self.key_pressed[pygame.K_LSHIFT]
         self.shift += self.key_pressed[pygame.K_RSHIFT]
+    def get_sound(self, path=soundpath, filext=".wav", islist=0):
+        say = 1
+        x = 0
+        if islist == 0:
+            sounds = glob(os.path.join(path + filext))
+            sounds = natsort.natsorted(sounds)
+        else: sounds = path
+        while True:
+            pygame.time.Clock().tick(30)
+            if say:
+                say = 0
+                if sounds:
+                    if islist == 0:
+                        sound = sounds[x][sounds[x].find("sounds")+7:]
+                    else: sound = sounds[x]
+                    tolk.output(f"{sound}")
+                else: tolk.output(f"No sounds.")
+            for event in pygame.event.get():
+                    if event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_UP:
+                            x = self.selector(sounds, x, go="up")
+                            say = 1
+                        if event.key == pygame.K_DOWN:
+                            x = self.selector(sounds, x, go="down")
+                            say = 1
+                        if event.key == pygame.K_HOME:
+                            x = 0
+                            say = 1
+                        if event.key == pygame.K_END:
+                            x = len(sounds) - 1
+                            say = 1
+                        if event.key == pygame.K_PAGEUP:
+                            x -= 10
+                            if x < 0: x = 0
+                            say = 1
+                        if event.key == pygame.K_PAGEDOWN:
+                            x += 10
+                            if x >= len(sounds): x = len(maps) - 1
+                            say = 1
+                        if event.key == pygame.K_RETURN:
+                            tolk.silence()
+                            if sounds:return sound
+                            else: return None
+                        if event.key == pygame.K_F12:
+                            tolk.output(f"Debug Onn.",1)
+                            Pdb().set_trace()
+                            tolk.output(f"Debug Off.",1)
+                        if event.key == pygame.K_ESCAPE:
+                            return tolk.silence()
     def get_radians(self, degrees):
         return (
             math.cos(math.radians(degrees)), 
@@ -323,7 +365,21 @@ class Main:
     def keys_edit_tile(self, event):
         if event.key == pygame.K_F9:
             self.save_map()
+        if event.key == pygame.K_a and self.ctrl:
+            tolk.output(f"Add.",1)
+            sound = self.get_sound(path=soundpath, filext="/*.wav")
+            if sound:
+                self.pos.ambient += [sound]
+                tolk.output(f"Added.",1)
+        if event.key == pygame.K_a and self.shift:
+            tolk.output(f"Remove.",1)
+            sound = self.get_sound(
+                path=self.pos.ambient, filext="/*.wav", islist=1)
+            if sound:
+                self.pos.ambient.remove(sound)
+                tolk.output(f"Removed.",1)
         if event.key == pygame.K_b:
+            tolk.output(f"Remove.",1)
             if self.tiles:
                 if self.tiles[0].blocked:
                     for it in self.tiles: it.blocked = 0
@@ -510,6 +566,7 @@ class Main:
     def map_info(self):
         self.pos.update()
         self.pos.say_type()
+        if self.pos.ambient: tolk.output(f"Ambient sounds.")
         if self.pos in self.tiles: tolk.output(f"Selected.")
     def Move_object(self, unit, backward=0):
         if unit.can_walk():
