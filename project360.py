@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
-import os
-from glob import glob
+import gc
 import math
-import sys
-import synthizer as syn
 import os
 import pickle
 import pygame
+import sys
+import synthizer as syn
 import natsort
 #import sys
 import time
 
 from cytolk import tolk
+from glob import glob
 from pdb import Pdb
 from random import choice, randint, uniform, shuffle
 
@@ -32,9 +32,10 @@ mixer = pygame.mixer
 pygame.mixer.pre_init(frequency=44100, size=32, channels=2, buffer=500)
 pygame.init()
 
+
 class Player:
     def __init__(self):
-        self.countdown = 400
+        self.countdown = 500
         self._countdown = 0
         self.foot = [
             ]
@@ -87,17 +88,14 @@ class World:
     def add_tileattr(self):
         for y in self.map:
             for it in y:
-                it.ambient = []
-                it.items = []
-                it.blocked = 0
-                it.map = None
-                it.sonar = None
+                it.generator = None
+                it.source = None
     def new_world(self):
         tolk.output(f"creating world.", 1)
-        self.name = "Map 2"
+        self.name = "Map 1"
         self.ext = ".map"
-        self.height = 300
-        self.width = 300
+        self.height = 500
+        self.width = 500
         self.map = []
         for y in range(0, self.height, 1):
             self.map.append([])
@@ -111,6 +109,11 @@ class World:
         for ls in self.map:
             for it in ls:
                 it.restart_attr()
+    def set_savingmap_settings(self):
+        for y in self.map:
+            for it in y:
+                it.source = None
+                it.generator = None
     def update(self):
         pass
 
@@ -119,13 +122,12 @@ class Tile:
         self.name = ""
         self.ambient = []
         self.blocked = 0
-        self.floor = "Rock"
-        self.foot_floor = []
-        self.foot_wall = []
+        self.set_to_sand()
+        self.generator = None
         self.items = []
         self.map = None
         self.sonar = None
-        self.wall = "Wall"
+        self.source = None
     
     def get_type(self):
         say = 1
@@ -159,7 +161,7 @@ class Tile:
     def restart_attr(self):
         if self.floor == "Grass": self.set_to_grass()
         elif self.floor == "Sand": self.set_to_sand()
-        elif self.floor == "wall": self.set_to_wall()
+        elif self.floor == "wall": self.set_to_rock()
     def set_to_grass(self):
         self.floor = "Grass"
         self.wall = None
@@ -169,6 +171,7 @@ class Tile:
             "grass03",
             "grass04",
             ]
+        self.foot_wall = []
     def set_to_sand(self):
         self.floor = "Sand"
         self.wall = None
@@ -179,15 +182,14 @@ class Tile:
             "sand04",
             "sand05",
             ]
-        self.foot_wall = [
-            ]
-    def set_to_wall(self):
+        self.foot_wall = []    
+    def set_to_rock(self):
         self.floor = "Rock"
         self.wall = "Wall"
     def set_tiletype(self, value):
         if value == "Grass": self.set_to_grass()
         if value == "Sand": self.set_to_sand()
-        if value == "Wall": self.set_to_wall() 
+        if value == "Wall": self.set_to_rock() 
     def say_type(self):
         tolk.output(f"{self.floor}.")
         if self.wall: tolk.output(f"{self.wall}.")
@@ -206,7 +208,7 @@ class Main:
         syn.initialize()
         self.ctx = syn.Context()
         self.ctx.default_panner_strategy.value = syn.PannerStrategy.HRTF
-        self.ctx.position.value = 0, 0, 0
+        self.ctx.default_distance_max.value = 20
         
         # Other initial settings.
         self.making_map = 0
@@ -215,7 +217,7 @@ class Main:
     
     def _walk(self):
         self.world.restart_tiles()
-        self.world.add_player(90, "player1", [20, 20, 0])
+        self.world.add_player(0, "player1", [10, 20, 0])
         self.player = self.world.players[0]
         self.wmap = self.world.map
         self.pos = self.wmap[self.player.position[0]][self.player.position[1]]
@@ -223,7 +225,7 @@ class Main:
         tolk.output(f"Explorer.",1)
         while True:
             pygame.time.Clock().tick(60)
-            self.ctime = pygame.time.get_ticks()
+            self.update()
             self.player.update()
             self.get_pressed_keys()
             self.ctx.position.value = self.player.position
@@ -247,12 +249,11 @@ class Main:
         self.xrange = 0
         self.yrange = 0
         self.tiles = []
-        self.init_source3d()
         tolk.output(f"Editor.",1)
         while  True:
             pygame.time.Clock().tick(60)
+            self.update(editing=1)
             self.get_pressed_keys()
-            self.ctx.position.value = self.get_i2d(self.wmap, self.pos)
             for event in pygame.event.get():
                 if event.type == pygame.KEYDOWN:
                     self.keys_map_editor(event)
@@ -272,29 +273,34 @@ class Main:
         generator.looping.value = 0
         src = syn.DirectSource(self.ctx)
         src.add_generator(generator)
-    def add_source3d(self, position, sound):
-        buffer = syn.Buffer.from_file(f"{soundpath+sound}.wav")
+    def add_source3d(self, tile, z=0):
+        sound = choice(tile.ambient)
+        if ".wav" not in sound: sound += ".wav"
+        position = self.get_i2d(self.wmap, tile)
+        position[2] = z
+        buffer = syn.Buffer.from_file(f"{soundpath+sound}")
         generator = syn.BufferGenerator(self.ctx)
         generator.buffer.value = buffer
         generator.looping.value = 1
         src = syn.Source3D(self.ctx, position=position)
-        src.rolloff.value = 3
-        src.distance_ref.value = 3
+        src.gain.value = 2
+        src.distance_ref.value = 5
         src.add_generator(generator)
-        
+        tile.generator = generator
+        tile.source = src
     def get_i2d(self, lst, obj,timer=0):
         if timer:print(f"index starts at {pygame.time.get_ticks()}.")
         for y in range(len(lst)):
             for x in range(len(lst[y])):
                 if lst[y][x] == obj: 
-                    location = [x, y, 10]
+                    location = [x, y, 0]
                     if timer: print(f"ends at {pygame.time.get_ticks()}.") 
                     return location 
     def get_pressed_keys(self):
         self.key_pressed = pygame.key.get_pressed()
         self.alt = self.key_pressed[pygame.K_LALT]
         self.ctrl = self.key_pressed[pygame.K_LCTRL]
-        self.ctrl = self.key_pressed[pygame.K_RCTRL]
+        self.ctrl += self.key_pressed[pygame.K_RCTRL]
         self.shift = self.key_pressed[pygame.K_LSHIFT]
         self.shift += self.key_pressed[pygame.K_RSHIFT]
     def get_sound(self, path=soundpath, filext=".wav", islist=0):
@@ -345,7 +351,8 @@ class Main:
                             Pdb().set_trace()
                             tolk.output(f"Debug Off.",1)
                         if event.key == pygame.K_ESCAPE:
-                            return tolk.silence()
+                            tolk.silence()
+                            return 
     def get_radians(self, degrees):
         return (
             math.cos(math.radians(degrees)), 
@@ -354,14 +361,10 @@ class Main:
     
     
     def init_source3d(self):
-        self.sources3d = []
         for y in self.wmap:
             for it in y:
-                if it.ambient:
-                    position = self.get_i2d(self.wmap, it)
-                    sound = choice(it.ambient)
-                    self.add_source3d(position, sound)
-                    
+                if it.ambient and it.source == None:
+                    self.add_source3d(it, z=10)
     def keys_edit_tile(self, event):
         if event.key == pygame.K_F9:
             self.save_map()
@@ -377,6 +380,8 @@ class Main:
                 path=self.pos.ambient, filext="/*.wav", islist=1)
             if sound:
                 self.pos.ambient.remove(sound)
+                self.pos.source.remove_generator(self.pos.generator)
+                self.pos.source = None
                 tolk.output(f"Removed.",1)
         if event.key == pygame.K_b:
             tolk.output(f"Remove.",1)
@@ -391,6 +396,9 @@ class Main:
             pass
         if event.key == pygame.K_g:
             pass
+        if event.key == pygame.K_n:
+            name = self.set_attr(attrtype="str")
+            if name: self.pos.name = name
         if event.key == pygame.K_s and self.shift:
             self.pos.ambient = ["forest01"]
             return
@@ -501,8 +509,10 @@ class Main:
                 say = 0
                 if maps:
                     file = open(maps[x], "rb")
+                    gc.disable()
                     world = pickle.loads(file.read())
-                    #world.update()
+                    gc.enable()
+                    world.update()
                     if saved == 0:
                         tolk.output(f"{world.name}.", 1)
                     elif saved: 
@@ -565,6 +575,7 @@ class Main:
                         return
     def map_info(self):
         self.pos.update()
+        if self.pos.name: tolk.output(f"{self.pos.name}.")
         self.pos.say_type()
         if self.pos.ambient: tolk.output(f"Ambient sounds.")
         if self.pos in self.tiles: tolk.output(f"Selected.")
@@ -584,6 +595,7 @@ class Main:
             if unit.can_pass(destination):
                 unit.position[0], unit.position[1], unit.position[2] = x, y, 0
                 if destination.foot_floor:
+                    print(f"have sound.")
                     sound = choice(destination.foot_floor)
                     self.add_directsound(sound)
             else: 
@@ -596,13 +608,14 @@ class Main:
     
     def save_map(self):
         tolk.output("Saving map.",1)
-        self.world.update()
+        self.world.set_savingmap_settings()
+        pickle.HIGHEST_PROTOCOL
         file = open(
             os.path.join("maps//") +
             self.world.name +
             self.world.ext,
             "wb")
-        file.write(pickle.dumps(self.world))
+        file.write(pickle.dumps(self.world, protocol=5))
         file.close()
         tolk.output(f"map saved.",1)
         time.sleep(1)
@@ -631,6 +644,84 @@ class Main:
             else:
                 x += 1
                 return x
+    def     set_attr(self, attrtype="str"):
+        say = 1
+        i = 0
+        data = str()
+        if attrtype == "str": tolk.output(f"type a string.",1)
+        if attrtype == "int": tolk.output(f"type a int.",1)
+        if attrtype == "float": tolk.output(f"type a float.",1)        
+        while True:
+            pygame.time.Clock().tick(60)
+            if i < 0: i = 0
+            if say:
+                say = 0
+                if data: tolk.output(f"{data[i]}")
+                else: tolk.output(f"Blank.")
+            for event in pygame.event.get():
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_UP or event.key == pygame.K_DOWN:
+                        if data: tolk.output(f"{data}",1)
+                        else: tolk.output(f"Blank.",1)
+                    if event.key == pygame.K_LEFT:
+                        i -= 1
+                        say = 1
+                    if event.key == pygame.K_RIGHT:
+                        i += 1
+                        say = 1
+                        if i == len(data): i = len(data) - 1
+                    if event.key == pygame.K_SPACE:
+                        item = None
+                        if attrtype == "str": 
+                            item = event.unicode
+                            home = data[:i+1]
+                            end = data[i+1:]
+                            data = home + item + end
+                            i += 1
+                            if i == len(data): i = len(data) - 1
+                    if event.key != pygame.K_DELETE:
+                        item = None
+                        if attrtype == "str":
+                            if event.unicode.isalnum() == False: continue 
+                        if attrtype == "int":
+                            if event.unicode.isnumeric() == False: continue
+                        if attrtype == "float":
+                            if (event.unicode.isnumeric() == False
+                                and event.unicode != "."): continue
+                        item = event.unicode 
+                        home = data[:i+1]
+                        end = data[i+1:]
+                        data = home + item + end
+                        i += 1
+                        if i == len(data): i = len(data) - 1
+                    if event.key == pygame.K_DELETE:
+                        if len(data) > 0:
+                            tolk.output(f"{data[i]}.", 1)
+                            data = data[:i] + data[i+1:]
+                            i -= 1
+                            if i < 0: i = 0
+                    if event.key == pygame.K_RETURN:
+                        if data: 
+                            if attrtype == "str":  return str(data)
+                            if attrtype == "int":  return int(data)
+                        else: return None
+                    if event.key == pygame.K_F12:
+                        tolk.output(f"Debug On.",1)
+                        Pdb().set_trace()
+                        tolk.output(f"Debug Off.",1)
+                    if event.key == pygame.K_ESCAPE:
+                        tolk.silence()
+                        return
+    def set_orientation(self):
+        degrees = self.player.degrees
+        x, y, z = 0, 0, 0
+        if degrees > 270 or degrees in range(0, 90): y = 1
+        if degrees in range(91, 270): y = -1
+        if degrees in range(1, 180): x = 1
+        if degrees > 180: x = 1
+        at = [x, y, z]
+        up = [0, 0, 1]
+        self.ctx.orientation.value = at + up
     def set_map_move(self):
         self.pos = self.world.map[self.y][self.x]
         self.map_info()
@@ -682,7 +773,16 @@ class Main:
                             self._edit_map()
                     if event.key == pygame.K_ESCAPE:
                         exit()
-    
+    def update(self, editing=0):
+        self.ctime = pygame.time.get_ticks()
+        self.init_source3d()
+        if editing == 0: 
+            self.set_orientation()
+            position = self.player.position
+            self.ctx.position.value = position
+        elif editing: 
+            self.ctx.position.value = self.get_i2d(self.wmap, self.pos)
+
 if __name__ == "__main__":
     main = Main()    
     main.start_menu()
