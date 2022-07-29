@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
+import decimal
 import gc
 import math
+import numpy
 import os
 import pickle
 import pygame
 import sys
-import synthizer as syn
 import natsort
+import synthizer as syn
 #import sys
 import time
 
@@ -17,24 +19,13 @@ from random import choice, randint, uniform, shuffle
 
 tolk.load()
 
-mixer = pygame.mixer
-pygame.mixer.pre_init(frequency=44100, size=32, channels=2, buffer=500)
-pygame.init()
-pygame.mixer.set_num_channels(16)
 wav = '.wav'
 soundpath = os.getcwd() + str('/data/sounds/')
 
-
-CHT0 = pygame.mixer.Channel(0)
-
-
-mixer = pygame.mixer
-pygame.mixer.pre_init(frequency=44100, size=32, channels=2, buffer=500)
-pygame.init()
-
-
 class Player:
     def __init__(self):
+        self.name = ""
+        self.editor = 0
         self.countdown = 500
         self._countdown = 0
         self.foot = [
@@ -42,6 +33,7 @@ class Player:
         self.passable_floor = ["Grass", "Sand"]
         self.passable_wall = [None]
     def can_pass(self, destination):
+        if self.editor: return True
         floor = None 
         wall = None
         if destination.floor not in self.passable_floor:
@@ -59,10 +51,13 @@ class Player:
         tolk.output(f"{self.degrees}.",1)
     def say_cdt(self):
         x = str(self.position[0])
-        x = x[:x.rfind(".")+3]
+        #x = x[:x.rfind(".")+3]
         y = str(self.position[1])
-        y = y[:y.rfind(".")+3]
-        tolk.output(f"y {y}, x {x}.",1)
+        #y = y[:y.rfind(".")+3]
+        tolk.output(f"x {x}, y {y}.",1)
+    def set_editor(self):
+        self.editor = 1
+        self.countdown = 0
     def set_name(self, name):
         self.name = name
     def set_degrees(self, degrees):
@@ -92,10 +87,10 @@ class World:
                 it.source = None
     def new_world(self):
         tolk.output(f"creating world.", 1)
-        self.name = "Map 1"
+        self.name = "map1"
         self.ext = ".map"
-        self.height = 500
-        self.width = 500
+        self.height = 800
+        self.width = 800
         self.map = []
         for y in range(0, self.height, 1):
             self.map.append([])
@@ -104,7 +99,6 @@ class World:
         main.pos = self.map[0][0]
         main.y = 0
         main.x = 0
-        pass
     def restart_tiles(self):
         for ls in self.map:
             for it in ls:
@@ -122,7 +116,7 @@ class Tile:
         self.name = ""
         self.ambient = []
         self.blocked = 0
-        self.set_to_sand()
+        self.set_to_rock()
         self.generator = None
         self.items = []
         self.map = None
@@ -186,6 +180,8 @@ class Tile:
     def set_to_rock(self):
         self.floor = "Rock"
         self.wall = "Wall"
+        self.foot_floor = []
+        self.foot_wall = []
     def set_tiletype(self, value):
         if value == "Grass": self.set_to_grass()
         if value == "Sand": self.set_to_sand()
@@ -208,16 +204,15 @@ class Main:
         syn.initialize()
         self.ctx = syn.Context()
         self.ctx.default_panner_strategy.value = syn.PannerStrategy.HRTF
-        self.ctx.default_distance_max.value = 20
+        self.ctx.default_distance_max.value = 40
         
         # Other initial settings.
         self.making_map = 0
         self.world = None
-    
-    
+        decimal.getcontext().prec = 3
     def _walk(self):
         self.world.restart_tiles()
-        self.world.add_player(0, "player1", [10, 20, 0])
+        self.world.add_player(0, "player1", [5, 5, 0])
         self.player = self.world.players[0]
         self.wmap = self.world.map
         self.pos = self.wmap[self.player.position[0]][self.player.position[1]]
@@ -238,17 +233,21 @@ class Main:
                         tolk.output(f"Debug On.")
                         Pdb().set_trace()
                         tolk.output(f"Debug Off.")
-                    if self.key_pressed[pygame.K_ESCAPE]:
-                        return
+                    if event.key == pygame.K_ESCAPE:
+                        exit()
     def _edit_map(self):
         self.wmap = self.world.map
         self.world.restart_tiles()
         #self.world.add_tileattr()
+        self.world.add_player(0, name="Editor", position=[2,2,0])
+        self.player = self.world.players[0]
+        self.player.set_editor()
         self.pos = self.wmap[0][0]
-        self.y, self.x = 0, 0
+        self.y, self.x = self.player.position[0], self.player.position[1]
         self.xrange = 0
         self.yrange = 0
         self.tiles = []
+        self.set_map_move()
         tolk.output(f"Editor.",1)
         while  True:
             pygame.time.Clock().tick(60)
@@ -257,12 +256,13 @@ class Main:
             for event in pygame.event.get():
                 if event.type == pygame.KEYDOWN:
                     self.keys_map_editor(event)
+                    self.keys_set_degree(event)
                     if event.key == pygame.K_F12:
                         tolk.output(f"Debug On.")
                         Pdb().set_trace()
                         tolk.output(f"Debug Off.")
-                    if self.key_pressed[pygame.K_ESCAPE]:
-                        return
+                    if event.key == pygame.K_ESCAPE:
+                        exit()
 
 
 
@@ -283,8 +283,8 @@ class Main:
         generator.buffer.value = buffer
         generator.looping.value = 1
         src = syn.Source3D(self.ctx, position=position)
-        src.gain.value = 2
-        src.distance_ref.value = 5
+        src.gain.value = 4
+        src.distance_ref.value = 20
         src.add_generator(generator)
         tile.generator = generator
         tile.source = src
@@ -354,17 +354,23 @@ class Main:
                             tolk.silence()
                             return 
     def get_radians(self, degrees):
-        return (
-            math.cos(math.radians(degrees)), 
-            math.sin(math.radians(degrees))
-            )
+        r = decimal.Decimal(math.radians(degrees))
+        sin = decimal.Decimal(math.sin(r))
+        cos = decimal.Decimal(math.cos(r))
+        return  sin, cos
     
     
     def init_source3d(self):
-        for y in self.wmap:
-            for it in y:
+        posx = int(self.player.position[0])
+        posy = int(self.player.position[1])
+        xrange = [posx -50, posx + 51]
+        yrange = [posy -50, posy + 51]
+        if xrange[0] < 0: xrange[0] = 0
+        if yrange[0] < 0: yrange[0] = 0
+        for y in self.wmap[yrange[0]:yrange[1]]:
+            for it in y[xrange[0]:xrange[1]]:
                 if it.ambient and it.source == None:
-                    self.add_source3d(it, z=10)
+                    self.add_source3d(it, z=30)
     def keys_edit_tile(self, event):
         if event.key == pygame.K_F9:
             self.save_map()
@@ -380,6 +386,7 @@ class Main:
                 path=self.pos.ambient, filext="/*.wav", islist=1)
             if sound:
                 self.pos.ambient.remove(sound)
+                Pdb().set_trace()
                 self.pos.source.remove_generator(self.pos.generator)
                 self.pos.source = None
                 tolk.output(f"Removed.",1)
@@ -411,7 +418,7 @@ class Main:
             tiletype = self.pos.get_type()
             [it.set_tiletype(tiletype) for it in self.tiles]
         if event.key == pygame.K_x:
-            tolk.output(f"Y {self.y}, X {self.x}.")
+            self.player.say_cdt()
         if event.key == pygame.K_PAGEUP:
             self.xrange -= 1
             tolk.output(f"X range: {self.xrange}.")
@@ -433,17 +440,26 @@ class Main:
             tolk.output(f"Cleaned.", 1)
         if event.key == pygame.K_SPACE:
             tolk.silence()
-            xrange = [self.x, self.x + self.xrange]
+            xrange = [int(self.x), int(self.x) + self.xrange]
             xrange = range(min(xrange), max(xrange) + 1)
-            yrange = [self.y, self.y + self.yrange]
+            yrange = [int(self.y), int(self.y) + self.yrange]
             yrange = range(min(yrange), max(yrange) + 1)
             wmap = self.world.map
-            for y in range(len(wmap)):
-                for x in range(len(wmap[y])):
-                    if wmap[y][x] in self.tiles: continue
-                    if wmap[y][x].blocked: continue
-                    if y in yrange and x in xrange:
-                        self.tiles += [wmap[y][x]]
+            print(f"{xrange=:}, {yrange=:}.")
+            idy = yrange[0] -1
+            for y in wmap[yrange[0]:yrange[-1]+1]:
+                idy += 1
+                print(f"{idy=:}.")
+                if idy not in yrange: continue
+                idx = xrange[0] -1
+                for x in y[xrange[0]:xrange[-1]+1]:
+                    idx += 1
+                    print(f"{idx=:}.")
+                    if x in self.tiles: continue
+                    if x.blocked: continue
+                    if idx not in xrange: continue
+                    self.tiles += [x]
+                    print(f"added.")
             tolk.output(f"{len(self.tiles)}tiles selected.")
             return
     def keys_global(self, event):
@@ -453,51 +469,48 @@ class Main:
         self.keys_edit_tile(event)        
         # Map movement.
         if event.key == pygame.K_DOWN:
-            if self.y > 0: 
-                self.y -= 1
-                self.set_map_move()
-            else:
-                tolk.output("End.")
+            self.Move_object(self.player, degrees=180)
+            self.set_map_move()
         if event.key == pygame.K_UP:
-            if self.y < len(self.world.map) - 1: 
-                self.y += 1
-                self.set_map_move()
-            else:
-                tolk.output("End.")
-        if event.key == pygame.K_LEFT:
-            if self.x > 0: 
-                self.x -= 1
-                self.set_map_move()
-            else:
-                tolk.output("End.")
-        if event.key == pygame.K_RIGHT:
-            if self.x < len(self.world.map[0]) - 1: 
-                self.x += 1
-                self.set_map_move()
-            else:
-                tolk.output("End.")
+            self.Move_object(self.player, degrees=0)
+            self.set_map_move()
+        if event.key == pygame.K_LEFT and self.ctrl == 0:
+            self.Move_object(self.player, degrees=270)
+            self.set_map_move()
+        if event.key == pygame.K_RIGHT and self.ctrl == 0:
+            self.Move_object(self.player, degrees=90)
+            self.set_map_move()
     def keys_object_movement(self):
         if self.key_pressed[pygame.K_w]:
             self.Move_object(self.player)
         if self.key_pressed[pygame.K_s]:
             self.Move_object(self.player, 1)
     def keys_set_degree(self, event):
-        if event.key == pygame.K_a: 
-            if self.key_pressed[pygame.K_RSHIFT] \
-            or self.key_pressed[pygame.K_LSHIFT]: self.player.degrees -= 180
-            else: self.player.degrees -= 45
-            if self.player.degrees < 0: self.player.degrees += 360
-            #if self.player.degrees == 316: self.player.degrees = 315
-            #if self.player.degrees == 181: self.player.degrees = 180
-            self.player.say_degrees()
-        if event.key == pygame.K_d:
-            if self.key_pressed[pygame.K_RSHIFT]\
-            or self.key_pressed[pygame.K_LSHIFT]: 
-                self.player.degrees += 180
-            else: self.player.degrees += 45
-            if self.player.degrees > 360: self.player.degrees -= 360
-            if self.player.degrees == 360: self.player.degrees = 0
-            self.player.say_degrees()
+        if self.player.editor:
+            if event.key == pygame.K_LEFT and self.ctrl:
+                self.player.degrees -= 45
+                if self.player.degrees < 0: self.player.degrees += 360
+                self.player.say_degrees()
+            if event.key == pygame.K_RIGHT and self.ctrl:
+                self.player.degrees += 45
+                if self.player.degrees > 360: self.player.degrees -= 360
+                if self.player.degrees == 360: self.player.degrees = 0
+                self.player.say_degrees()
+        if self.player.editor == 0:
+            if event.key == pygame.K_a: 
+                if self.key_pressed[pygame.K_RSHIFT] \
+                or self.key_pressed[pygame.K_LSHIFT]: self.player.degrees -= 180
+                else: self.player.degrees -= 45
+                if self.player.degrees < 0: self.player.degrees += 360
+                self.player.say_degrees()
+            if event.key == pygame.K_d:
+                if self.key_pressed[pygame.K_RSHIFT]\
+                or self.key_pressed[pygame.K_LSHIFT]: 
+                    self.player.degrees += 180
+                else: self.player.degrees += 45
+                if self.player.degrees > 360: self.player.degrees -= 360
+                if self.player.degrees == 360: self.player.degrees = 0
+                self.player.say_degrees()
     def load_map(self, location, filext, saved=0):
         x = 0
         say = 1
@@ -509,14 +522,8 @@ class Main:
                 say = 0
                 if maps:
                     file = open(maps[x], "rb")
-                    gc.disable()
-                    world = pickle.loads(file.read())
-                    gc.enable()
-                    world.update()
-                    if saved == 0:
-                        tolk.output(f"{world.name}.", 1)
-                    elif saved: 
-                        tolk.output(f"{maps[x][6:-5]}")
+                    name = pickle.load(file)
+                    tolk.output(f"{name}.", 1)
                 else:
                     tolk.output(f"no maps.", 1)
             for event in pygame.event.get():
@@ -556,9 +563,8 @@ class Main:
                         say = 1
                     if event.key == pygame.K_RETURN:
                         if maps:
-                            file = open(maps[x], "rb")
                             self.world = World()
-                            world = pickle.loads(file.read())
+                            world = pickle.load(file)
                             self.world.name = world.name
                             self.world.ext = world.ext
                             self.world.height = world.height
@@ -579,18 +585,18 @@ class Main:
         self.pos.say_type()
         if self.pos.ambient: tolk.output(f"Ambient sounds.")
         if self.pos in self.tiles: tolk.output(f"Selected.")
-    def Move_object(self, unit, backward=0):
+    def Move_object(self, unit, backward=0, degrees=None):
         if unit.can_walk():
             unit._countdown = self.ctime + unit.countdown
             x = unit.position[0]
             y = unit.position[1]
-            degrees = unit.degrees
+            if degrees == None: degrees = unit.degrees
             if backward:
                 degrees += 180
                 if degrees > 360: degrees -= 361
             radians = self.get_radians(degrees)
-            x += radians[1]
-            y += radians[0]
+            x += radians[0]
+            y += radians[1]
             destination = self.wmap[int(y)][int(x)]
             if unit.can_pass(destination):
                 unit.position[0], unit.position[1], unit.position[2] = x, y, 0
@@ -609,13 +615,12 @@ class Main:
     def save_map(self):
         tolk.output("Saving map.",1)
         self.world.set_savingmap_settings()
-        pickle.HIGHEST_PROTOCOL
-        file = open(
-            os.path.join("maps//") +
-            self.world.name +
-            self.world.ext,
-            "wb")
-        file.write(pickle.dumps(self.world, protocol=5))
+        filename = os.path.join("maps//")
+        filename += self.world.name
+        filename += self.world.ext
+        file = open(filename, "wb")
+        pickle.dump(self.world.name, file)
+        pickle.dump(self.world, file)
         file.close()
         tolk.output(f"map saved.",1)
         time.sleep(1)
@@ -723,7 +728,8 @@ class Main:
         up = [0, 0, 1]
         self.ctx.orientation.value = at + up
     def set_map_move(self):
-        self.pos = self.world.map[self.y][self.x]
+        self.x, self.y = self.player.position[0], self.player.position[1]
+        self.pos = self.world.map[int(self.y)][int(self.x)]
         self.map_info()
 
     
@@ -776,12 +782,11 @@ class Main:
     def update(self, editing=0):
         self.ctime = pygame.time.get_ticks()
         self.init_source3d()
-        if editing == 0: 
-            self.set_orientation()
-            position = self.player.position
-            self.ctx.position.value = position
-        elif editing: 
-            self.ctx.position.value = self.get_i2d(self.wmap, self.pos)
+        self.player.update()
+        self.set_orientation()
+        self.ctx.position.value = self.player.position
+
+
 
 if __name__ == "__main__":
     main = Main()    
