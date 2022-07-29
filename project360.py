@@ -71,6 +71,7 @@ class Player:
 class World:
     def __init__(self):
         self.name = None
+        self.jumppoints = []
         self.players = []
         self.tiles = []
     
@@ -116,10 +117,11 @@ class Tile:
         self.name = ""
         self.ambient = []
         self.blocked = 0
-        self.set_to_rock()
         self.generator = None
         self.items = []
+        self.jname = None
         self.map = None
+        self.set_to_rock()
         self.sonar = None
         self.source = None
     
@@ -273,6 +275,14 @@ class Main:
         generator.looping.value = 0
         src = syn.DirectSource(self.ctx)
         src.add_generator(generator)
+    def add_jumppoint(self):
+        jname = self.set_attr(attrtype="str")
+        if jname == None: return
+        position = self.player.position
+        tile = self.wmap[position[0]][position[1]]
+        tile.jname = jname
+        tile.jposition = position
+        self.world.jumppoints += [tile]
     def add_source3d(self, tile, z=0):
         sound = choice(tile.ambient)
         if ".wav" not in sound: sound += ".wav"
@@ -296,6 +306,43 @@ class Main:
                     location = [x, y, 0]
                     if timer: print(f"ends at {pygame.time.get_ticks()}.") 
                     return location 
+    def get_jumppoint(self):
+        jumppoints = self.world.jumppoints
+        say = 1
+        x = 0
+        while True:
+            pygame.time.Clock().tick(60)
+            if say:
+                say = 0
+                if jumppoints == []: tolk.output(f"No jump points.")
+                tolk.output(
+                    f"{jumppoints[x]} at {jumppoints[x].jposition}.")
+            for event in pygame.event.get():
+                    if event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_UP:
+                            x = self.selector(jumppoints, x, go="up")
+                            say = 1
+                        if event.key == pygame.K_DOWN:
+                            x = self.selector(jumppoints, x, go="down")
+                            say = 1
+                        if event.key == pygame.K_HOME:
+                            x = 0
+                            say = 1
+                        if event.key == pygame.K_END:
+                            x = len(jumppoints) - 1
+                            say = 1
+                        if event.key == pygame.K_RETURN:
+                            x, y, z = jumppoints[x].jposition
+                            self.pos = self.wmap[x][y]
+                            self.player.position = jumppoints[x].jposition
+                            tolk.silence()
+                        if event.key == pygame.K_F12:
+                            tolk.output(f"Debug On.",1)
+                            Pdb().set_trace()
+                            tolk.output(f"Debug Off.")
+                        if event.key == pygame.K_ESCAPE:
+                            return tolk.silence()
+                            
     def get_pressed_keys(self):
         self.key_pressed = pygame.key.get_pressed()
         self.alt = self.key_pressed[pygame.K_LALT]
@@ -401,8 +448,13 @@ class Main:
                     tolk.output(f"Blocked.")
         if event.key == pygame.K_c:
             pass
-        if event.key == pygame.K_g:
-            pass
+        if event.key == pygame.K_j and self.shift:
+            self.remove_jumppoint()
+        if event.key == pygame.K_j and self.ctrl:
+            self.add_jummppoint()
+            return
+        if event.key == pygame.K_j:
+            self.get_jumppoint()
         if event.key == pygame.K_n:
             name = self.set_attr(attrtype="str")
             if name: self.pos.name = name
@@ -567,6 +619,7 @@ class Main:
                             world = pickle.load(file)
                             self.world.name = world.name
                             self.world.ext = world.ext
+                            self.world.jumppoints = world.jumppoints
                             self.world.height = world.height
                             self.world.width = world.width
                             self.world.map = world.map
@@ -584,6 +637,7 @@ class Main:
         if self.pos.name: tolk.output(f"{self.pos.name}.")
         self.pos.say_type()
         if self.pos.ambient: tolk.output(f"Ambient sounds.")
+        if self.pos.jname: tolk.output(f"{self.pos.jname}.")
         if self.pos in self.tiles: tolk.output(f"Selected.")
     def Move_object(self, unit, backward=0, degrees=None):
         if unit.can_walk():
@@ -612,6 +666,43 @@ class Main:
                         self.add_directsound(sound)
                 except Exception: Pdb().set_trace()
     
+    def remove_jumppoints(self):
+        jumppoints = self.world.jumppoints
+        say = 1
+        x = 0
+        while True:
+            pygame.time.Clock().tick(60)
+            if say:
+                say = 0
+                if jumppoints == []: tolk.output(f"No jump points.")
+                tolk.output(
+                    f"{jumppoints[x]} at {jumppoints[x].jposition}.")
+            for event in pygame.event.get():
+                    if event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_UP:
+                            x = self.selector(jumppoints, x, go="up")
+                            say = 1
+                        if event.key == pygame.K_DOWN:
+                            x = self.selector(jumppoints, x, go="down")
+                            say = 1
+                        if event.key == pygame.K_HOME:
+                            x = 0
+                            say = 1
+                        if event.key == pygame.K_END:
+                            x = len(jumppoints) - 1
+                            say = 1
+                        if pygame.key == pygame.K_RETURN:
+                            tile = jumppoints[x]
+                            tile.jname = None
+                            self.world.jumppoints.remove(jumppoints[x])
+                            tolk.silence()
+                            return
+                        if event.key == pygame.K_F12:
+                            tolk.output(f"Debug On.",1)
+                            Pdb().set_trace()
+                            tolk.output(f"Debug Off.")
+                        if event.key == pygame.K_ESCAPE:
+                            return tolk.silence()
     def save_map(self):
         tolk.output("Saving map.",1)
         self.world.set_savingmap_settings()
