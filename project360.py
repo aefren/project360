@@ -22,6 +22,13 @@ tolk.load()
 wav = '.wav'
 soundpath = os.getcwd() + str('/data/sounds/')
 
+
+class Source:
+    def __init__(self, tile):
+        self.tile = tile
+        self.position = self.tile.x, self.tile.y 
+
+
 class Player:
     def __init__(self):
         self.name = ""
@@ -73,7 +80,7 @@ class World:
         self.name = None
         self.jumppoints = []
         self.players = []
-        self.tiles = []
+        self.sources = []
     
     def add_player(self, degrees, name, position=[]):
         player = Player()
@@ -87,43 +94,46 @@ class World:
                 it.generator = None
                 it.source = None
     def new_world(self):
+        
         tolk.output(f"creating world.", 1)
         self.name = "map1"
         self.ext = ".map"
-        self.height = 800
-        self.width = 800
+        self.height = 500
+        self.width = 500
         self.map = []
         for y in range(0, self.height, 1):
             self.map.append([])
             for x in range(0, self.width, 1):
-                self.map[y].append(Tile())
-        main.pos = self.map[0][0]
-        main.y = 0
-        main.x = 0
+                tile = Tile()
+                tile.x, tile.y = x, y
+                self.map[y].append(tile)
     def restart_tiles(self):
         for ls in self.map:
             for it in ls:
                 it.restart_attr()
     def set_savingmap_settings(self):
-        for y in self.map:
-            for it in y:
-                it.source = None
-                it.generator = None
+        for src in self.sources:
+            if src.tile.source:
+                src.tile.source.pause()
+                src.tile.source.remove_generator(src.tile.generator)
+                src.tile.source = None
+                src.tile.generator = None
     def update(self):
-        pass
+        self.sources = [src for src in self.sources if src.tile.ambient]
 
 class Tile:
     def __init__(self):
         self.name = ""
         self.ambient = []
         self.blocked = 0
-        self.generator = None
+        #self.generator = None
         self.items = []
         self.jname = None
         self.map = None
         self.set_to_rock()
         self.sonar = None
         self.source = None
+        
     
     def get_type(self):
         say = 1
@@ -284,8 +294,7 @@ class Main:
         tile.jname = jname
         tile.jposition = x, y, 0
         self.world.jumppoints += [tile]
-    def add_source3d(self, tile, z=0):
-        sound = choice(tile.ambient)
+    def add_source3d(self, sound, tile, z=0):
         if ".wav" not in sound: sound += ".wav"
         position = self.get_i2d(self.wmap, tile)
         position[2] = z
@@ -299,6 +308,12 @@ class Main:
         src.add_generator(generator)
         tile.generator = generator
         tile.source = src
+    def get_distance(self, source, current):
+        distx = abs(source[0] - current[0])
+        disty = abs(source[1] - current[1])
+        #distz = abs(source[2] - current[2])
+        distance = max([distx, disty])
+        return distance
     def get_i2d(self, lst, obj,timer=0):
         if timer:print(f"index starts at {pygame.time.get_ticks()}.")
         for y in range(len(lst)):
@@ -412,16 +427,15 @@ class Main:
     
     
     def init_source3d(self):
-        posx = int(self.player.position[0])
-        posy = int(self.player.position[1])
-        xrange = [posx -50, posx + 51]
-        yrange = [posy -50, posy + 51]
-        if xrange[0] < 0: xrange[0] = 0
-        if yrange[0] < 0: yrange[0] = 0
-        for y in self.wmap[yrange[0]:yrange[1]]:
-            for it in y[xrange[0]:xrange[1]]:
-                if it.ambient and it.source == None:
-                    self.add_source3d(it, z=30)
+        for src in self.world.sources:
+            if src.tile.source: continue
+            distance = self.get_distance(src.position, self.player.position)
+            if distance < self.ctx.default_distance_max.value:
+                try:
+                    sound = choice(src.tile.ambient)
+                except Exception: Pdb().set_trace()
+                self.add_source3d(sound, src.tile, 20)
+        
     def keys_edit_tile(self, event):
         if event.key == pygame.K_F9:
             self.save_map()
@@ -430,6 +444,12 @@ class Main:
             sound = self.get_sound(path=soundpath, filext="/*.wav")
             if sound:
                 self.pos.ambient += [sound]
+                done = 0
+                for it in self.world.sources:
+                    if it.tile == self.pos: 
+                        done = 1
+                        break
+                if done == 0: self.world.sources += [Source(self.pos)]
                 tolk.output(f"Added.",1)
         if event.key == pygame.K_a and self.shift:
             tolk.output(f"Remove.",1)
@@ -437,7 +457,6 @@ class Main:
                 path=self.pos.ambient, filext="/*.wav", islist=1)
             if sound:
                 self.pos.ambient.remove(sound)
-                Pdb().set_trace()
                 self.pos.source.remove_generator(self.pos.generator)
                 self.pos.source = None
                 tolk.output(f"Removed.",1)
@@ -629,6 +648,7 @@ class Main:
                             self.world.height = world.height
                             self.world.width = world.width
                             self.world.map = world.map
+                            self.world.sources = world.sources
                             self.world.update()
                             return
                         else: tolk.output(f"no maps.", 1)
@@ -659,10 +679,8 @@ class Main:
             y += radians[1]
             destination = self.wmap[int(y)][int(x)]
             if unit.can_pass(destination):
-                #unit.position[0], unit.position[1], unit.position[2] = x, y, 0
                 unit.position = x, y, 0
                 if destination.foot_floor:
-                    print(f"have sound.")
                     sound = choice(destination.foot_floor)
                     self.add_directsound(sound)
             else: 
@@ -715,6 +733,14 @@ class Main:
                             tolk.output(f"Debug Off.")
                         if event.key == pygame.K_ESCAPE:
                             return tolk.silence()
+    def remove_source3d(self):
+        for src in self.world.sources:
+            if src.tile.source == None: continue
+            distance = self.get_distance(src.position, self.player.position)
+            if distance > self.ctx.default_distance_max.value + 5:
+                src.tile.source.remove_generator(src.tile.generator)
+                src.tile.source = None
+                src.tile.generator = None
     def save_map(self):
         tolk.output("Saving map.",1)
         self.world.set_savingmap_settings()
@@ -886,7 +912,9 @@ class Main:
                         exit()
     def update(self, editing=0):
         self.ctime = pygame.time.get_ticks()
+        self.world.update()
         self.init_source3d()
+        self.remove_source3d()
         self.player.update()
         self.set_orientation()
         self.ctx.position.value = self.player.position
