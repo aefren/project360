@@ -497,15 +497,19 @@ class Main:
             self.player.say_cdt()
         if event.key == pygame.K_PAGEUP:
             self.xrange -= 1
+            if self.shift: self.xrange -= 9
             tolk.output(f"X range: {self.xrange}.")
         if event.key == pygame.K_PAGEDOWN:
             self.xrange += 1
+            if self.shift: self.xrange += 9
             tolk.output(f"X range: {self.xrange}.")
         if event.key == pygame.K_HOME:
             self.yrange += 1
+            if self.shift: self.yrange += 9 
             tolk.output(f"Y range: {self.yrange}.")
         if event.key == pygame.K_END:
             self.yrange -= 1
+            if self.shift: self.yrange -= 9
             tolk.output(f"Y range: {self.yrange}.")
         if event.key == pygame.K_DELETE:
             self.yrange =0
