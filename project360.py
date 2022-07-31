@@ -224,7 +224,7 @@ class Main:
         decimal.getcontext().prec = 3
     def _walk(self):
         self.world.restart_tiles()
-        self.world.add_player(0, "player1", [5, 5, 0])
+        self.world.add_player(0, "player1", [2, 2, 0])
         self.player = self.world.players[0]
         self.wmap = self.world.map
         self.pos = self.wmap[self.player.position[0]][self.player.position[1]]
@@ -459,6 +459,7 @@ class Main:
                 self.pos.ambient.remove(sound)
                 self.pos.source.remove_generator(self.pos.generator)
                 self.pos.source = None
+                self.pos.generator = None
                 tolk.output(f"Removed.",1)
         if event.key == pygame.K_b:
             tolk.output(f"Remove.",1)
@@ -745,6 +746,7 @@ class Main:
                 src.tile.source.remove_generator(src.tile.generator)
                 src.tile.source = None
                 src.tile.generator = None
+                src.tile.generator = None
     def save_map(self):
         tolk.output("Saving map.",1)
         self.world.set_savingmap_settings()
@@ -752,8 +754,14 @@ class Main:
         filename += self.world.name
         filename += self.world.ext
         file = open(filename, "wb")
-        pickle.dump(self.world.name, file)
-        pickle.dump(self.world, file)
+        try:
+            pickle.dump(self.world.name, file)
+            pickle.dump(self.world, file)
+        except Exception as err:
+            print(f"{err}.")
+            tolk.output(f"{err}.")
+            exit() 
+
         file.close()
         tolk.output(f"map saved.",1)
         time.sleep(1)
