@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-import decimal
 import gc
+import decimal
 import math
 import numpy
 import os
 import pickle
+import psutil
 import pygame
 import sys
 import natsort
@@ -26,7 +27,22 @@ soundpath = os.getcwd() + str('/data/sounds/')
 class Source:
     def __init__(self, tile):
         self.tile = tile
-        self.position = self.tile.x, self.tile.y 
+        self.position = self.tile.x, self.tile.y
+    def check_complete(self):
+        tile = self.tile
+        position = tile.generator.playback_position.value
+        length = tile.buffer.get_size_in_length()
+        if length == position:
+            self.clean() 
+    def clean(self):
+        tile = self.tile
+        tile.source.remove_generator(tile.generator)
+        tile.source.dec_ref()
+        tile.source = None
+        tile.generator.dec_ref()
+        tile.generator = None
+    def update(self):
+        pass
 
 
 class Player:
@@ -35,10 +51,13 @@ class Player:
         self.editor = 0
         self.countdown = 500
         self._countdown = 0
+        self.generator = None
+        self.sensor_timers = [0, 0, 0, 0, 0,]
         self.foot = [
             ]
         self.passable_floor = ["Grass", "Sand"]
         self.passable_wall = [None]
+        self.source = None
     def can_pass(self, destination):
         if self.editor: return True
         floor = None 
@@ -48,12 +67,19 @@ class Player:
         if destination.wall not in self.passable_wall:
             wall = f"Can not pass {destination.wall} wall.." 
         if floor or wall:
-            if floor: tolk.output(floor)
-            if wall: tolk.output(wall)
+            #if floor: tolk.output(floor)
+            #if wall: tolk.output(wall)
             return False
         else: return True
     def can_walk(self):
         if self.ctime > self._countdown: return 1
+    def clean(self):
+        if self.source: 
+            self.source.dec_ref()
+            self.source = None
+        if self.generator: 
+            self.generator.dec_ref()
+            self.generator = None
     def say_degrees(self):
         tolk.output(f"{self.degrees}.",1)
     def say_cdt(self):
@@ -73,6 +99,7 @@ class Player:
         self.position = position
     def update(self):
         self.ctime = main.ctime
+        main.pos = main.wmap[int(self.position[1])][int(self.position[0])]
 
 
 class World:
@@ -98,8 +125,8 @@ class World:
         tolk.output(f"creating world.", 1)
         self.name = "map1"
         self.ext = ".map"
-        self.height = 500
-        self.width = 500
+        self.height = 700
+        self.width = 700
         self.map = []
         for y in range(0, self.height, 1):
             self.map.append([])
@@ -120,6 +147,7 @@ class World:
                 src.tile.generator = None
     def update(self):
         self.sources = [src for src in self.sources if src.tile.ambient]
+        [src.update() for src in self.sources]
 
 class Tile:
     def __init__(self):
@@ -216,19 +244,19 @@ class Main:
         syn.initialize()
         self.ctx = syn.Context()
         self.ctx.default_panner_strategy.value = syn.PannerStrategy.HRTF
-        self.ctx.default_distance_max.value = 40
+        self.ctx.default_distance_max.value = 10
         
         # Other initial settings.
-        self.making_map = 0
+        self.sounds = []
+        self.sensor = 0
         self.world = None
-        decimal.getcontext().prec = 3
+        decimal.getcontext().prec = 2
     def _walk(self):
         self.world.restart_tiles()
-        self.world.add_player(0, "player1", [2, 2, 0])
+        self.world.add_player(0, "player1", [2, 25, 0])
         self.player = self.world.players[0]
         self.wmap = self.world.map
         self.pos = self.wmap[self.player.position[0]][self.player.position[1]]
-        self.init_source3d()
         tolk.output(f"Explorer.",1)
         while True:
             pygame.time.Clock().tick(60)
@@ -236,6 +264,7 @@ class Main:
             self.player.update()
             self.get_pressed_keys()
             self.ctx.position.value = self.player.position
+            if self.sensor: self.sensor_event()
             self.keys_object_movement()
             for event in pygame.event.get():
                 if event.type == pygame.KEYDOWN:
@@ -268,6 +297,7 @@ class Main:
             for event in pygame.event.get():
                 if event.type == pygame.KEYDOWN:
                     self.keys_map_editor(event)
+                    self.keys_global(event)
                     self.keys_set_degree(event)
                     if event.key == pygame.K_F12:
                         tolk.output(f"Debug On.")
@@ -278,11 +308,12 @@ class Main:
 
 
 
-    def add_directsound(self, sound):
+    def add_directsound(self, sound, vol=1):
         buffer = syn.Buffer.from_file(f"{soundpath+sound}.wav")
         generator = syn.BufferGenerator(self.ctx)
         generator.buffer.value = buffer
         generator.looping.value = 0
+        if vol: generator.gain.value = vol
         src = syn.DirectSource(self.ctx)
         src.add_generator(generator)
     def add_jumppoint(self):
@@ -294,20 +325,29 @@ class Main:
         tile.jname = jname
         tile.jposition = x, y, 0
         self.world.jumppoints += [tile]
-    def add_source3d(self, sound, tile, z=0):
+    def add_source3d(
+            self, sound, gain=None, loop=0, linger=None, position=(), z=0,
+            ds_ref=None,):
+        buffer = None
         if ".wav" not in sound: sound += ".wav"
-        position = self.get_i2d(self.wmap, tile)
-        position[2] = z
-        buffer = syn.Buffer.from_file(f"{soundpath+sound}")
+        for sn in self.sounds:
+            if sn[0] == sound: 
+                buffer = sn[1]
+                break
+        if buffer == None:
+            buffer = syn.Buffer.from_file(f"{soundpath+sound}")
+            self.sounds += [[sound, buffer]]
         generator = syn.BufferGenerator(self.ctx)
         generator.buffer.value = buffer
-        generator.looping.value = 1
-        src = syn.Source3D(self.ctx, position=position)
-        src.gain.value = 4
-        src.distance_ref.value = 20
-        src.add_generator(generator)
-        tile.generator = generator
-        tile.source = src
+        generator.looping.value = loop
+        source = syn.Source3D(self.ctx, position=position)
+        if gain: source.gain.value = gain
+        if ds_ref: source.distance_ref.value = ds_ref
+        if linger: 
+            generator.config_delete_behavior(linger=True)
+            source.config_delete_behavior(linger=True)
+        source.add_generator(generator)
+        return buffer, generator, source
     def get_distance(self, source, current):
         distx = abs(source[0] - current[0])
         disty = abs(source[1] - current[1])
@@ -427,15 +467,19 @@ class Main:
     
     
     def init_source3d(self):
-        for src in self.world.sources:
-            if src.tile.source: continue
-            distance = self.get_distance(src.position, self.player.position)
+        for it in self.world.sources:
+            tile = it.tile
+            if tile.source: continue
+            distance = self.get_distance(it.position, self.player.position)
             if distance < self.ctx.default_distance_max.value:
-                try:
-                    sound = choice(src.tile.ambient)
-                except Exception: Pdb().set_trace()
-                self.add_source3d(sound, src.tile, 20)
-        
+                print(f"Adding sound in {tile.x, tile.y}.")
+                sound = choice(tile.ambient)
+                bf, gen, src = self.add_source3d(
+                    sound, position=(tile.x, tile.y, 0), gain=2, loop=0,
+                    linger=1, ds_ref=20)
+                tile.buffer = bf
+                tile.generator = gen
+                tile.source = src
     def keys_edit_tile(self, event):
         if event.key == pygame.K_F9:
             self.save_map()
@@ -544,8 +588,18 @@ class Main:
             tolk.output(f"{len(self.tiles)}tiles selected.")
             return
     def keys_global(self, event):
+        if event.key == pygame.K_e:
+            if self.sensor == 0:
+                self.sensor = 1
+                tolk.output(f"Sensor On.")
+            elif self.sensor:
+                self.sensor = 0
+                tolk.output(f"Sensor Off.")
         if event.key == pygame.K_x:
             self.player.say_cdt()
+        if event.key == pygame.K_F11:
+            mem = psutil.Process(os.getpid()).memory_info().rss/1024
+            tolk.output(f"{mem}.")
     def keys_map_editor(self, event):
         self.keys_edit_tile(event)        
         # Map movement.
@@ -579,15 +633,12 @@ class Main:
                 self.player.say_degrees()
         if self.player.editor == 0:
             if event.key == pygame.K_a: 
-                if self.key_pressed[pygame.K_RSHIFT] \
-                or self.key_pressed[pygame.K_LSHIFT]: self.player.degrees -= 180
+                if self.shift: self.player.degrees -= 180
                 else: self.player.degrees -= 45
                 if self.player.degrees < 0: self.player.degrees += 360
                 self.player.say_degrees()
             if event.key == pygame.K_d:
-                if self.key_pressed[pygame.K_RSHIFT]\
-                or self.key_pressed[pygame.K_LSHIFT]: 
-                    self.player.degrees += 180
+                if self.shift: self.player.degrees += 180
                 else: self.player.degrees += 45
                 if self.player.degrees > 360: self.player.degrees -= 360
                 if self.player.degrees == 360: self.player.degrees = 0
@@ -687,7 +738,11 @@ class Main:
                 unit.position = x, y, 0
                 if destination.foot_floor:
                     sound = choice(destination.foot_floor)
-                    self.add_directsound(sound)
+                    unit.clean()
+                    bf, gen, src = self.add_source3d(
+                        sound, gain=1, loop=0, linger=1, position=unit.position)
+                    unit.generator = gen
+                    unit.source = src
             else: 
                 tolk.output(f"Can not move there.",1)
                 try:
@@ -740,13 +795,11 @@ class Main:
                             return tolk.silence()
     def remove_source3d(self):
         for src in self.world.sources:
-            if src.tile.source == None: continue
             distance = self.get_distance(src.position, self.player.position)
-            if distance > self.ctx.default_distance_max.value + 5:
-                src.tile.source.remove_generator(src.tile.generator)
-                src.tile.source = None
-                src.tile.generator = None
-                src.tile.generator = None
+            if src.tile.source == None: continue
+            if distance <= self.ctx.default_distance_max.value + 1: continue
+            src.clean()
+            
     def save_map(self):
         tolk.output("Saving map.",1)
         self.world.set_savingmap_settings()
@@ -790,6 +843,51 @@ class Main:
             else:
                 x += 1
                 return x
+    def sensor_event(self,):
+        ldegrees = [self.player.degrees - 90]
+        ldegrees += [self.player.degrees - 45]
+        ldegrees += [self.player.degrees]
+        ldegrees += [self.player.degrees + 45]
+        ldegrees += [self.player.degrees + 90]
+        #ldegrees = [self.player.degrees]
+        for r in range(len(ldegrees)):
+            if ldegrees[r] < 0: ldegrees[r] += 360
+            if ldegrees[r] == 360: ldegrees[r] = 0
+            if ldegrees[r] > 360: ldegrees[r] -= 360
+        # sonar.
+        print(f"{ldegrees=:}.")
+        cdt_value = 200
+        idx = -1
+        for it in ldegrees:
+            idx += 1
+            print(f"checking {it}.")
+            print(f"ctime {self.ctime}, and {self.player.sensor_timers[idx]}")
+            if self.player.sensor_timers[idx] > self.ctime: 
+                continue
+            x, y = self.player.position[0], self.player.position[1]
+            z = self.player.position[2]
+            ctimer = cdt_value * len(ldegrees)
+            self.player.sensor_timers[idx] = self.ctime + ctimer
+            if idx < len(ldegrees) - 1:
+                ctimer = self.ctime + cdt_value
+                self.player.sensor_timers[idx+1] = ctimer
+            for r in range(10):
+                radians = self.get_radians(it)
+                x += radians[0]
+                y += radians[1]
+                destination = self.wmap[int(y)][int(x)]
+                print(f"checking in {x, y}.")
+                if self.player.can_pass(destination) == False:
+                    print(f"Can not pass to {destination.x}, {destination.y}.")
+                    x, y, z = int(x), int(y), int(z)
+                    sound = "sensor01"
+                    self.player.clean()
+                    bf, gen, src = self.add_source3d(
+                        sound, linger=1, loop=0, position =[x, y, z])
+                    self.player.generator = gen
+                    self.player.source = src
+                    break                
+                
     def     set_attr(self, attrtype="str"):
         say = 1
         i = 0
