@@ -139,9 +139,12 @@ class World:
             for it in ls:
                 it.restart_attr()
     def set_savingmap_settings(self):
+        for pl in self.players:
+            pl.clean()
         for src in self.sources:
             if src.tile.source:
                 src.tile.source.pause()
+                src.tile.buffer = None
                 src.tile.source.remove_generator(src.tile.generator)
                 src.tile.source = None
                 src.tile.generator = None
@@ -244,7 +247,7 @@ class Main:
         syn.initialize()
         self.ctx = syn.Context()
         self.ctx.default_panner_strategy.value = syn.PannerStrategy.HRTF
-        self.ctx.default_distance_max.value = 10
+        self.ctx.default_distance_max.value = 20
         
         # Other initial settings.
         self.sounds = []
@@ -327,7 +330,7 @@ class Main:
         self.world.jumppoints += [tile]
     def add_source3d(
             self, sound, gain=None, loop=0, linger=None, position=(), z=0,
-            ds_ref=None,):
+            ds_ref=None, pitch=None, rolloff=None):
         buffer = None
         if ".wav" not in sound: sound += ".wav"
         for sn in self.sounds:
@@ -339,10 +342,12 @@ class Main:
             self.sounds += [[sound, buffer]]
         generator = syn.BufferGenerator(self.ctx)
         generator.buffer.value = buffer
+        if pitch: generator.pitch_bend.value = pitch
         generator.looping.value = loop
         source = syn.Source3D(self.ctx, position=position)
-        if gain: source.gain.value = gain
         if ds_ref: source.distance_ref.value = ds_ref
+        if gain: source.gain.value = gain
+        if rolloff: source.rolloff.value = rolloff
         if linger: 
             generator.config_delete_behavior(linger=True)
             source.config_delete_behavior(linger=True)
@@ -476,7 +481,7 @@ class Main:
                 sound = choice(tile.ambient)
                 bf, gen, src = self.add_source3d(
                     sound, position=(tile.x, tile.y, 0), gain=2, loop=0,
-                    linger=1, ds_ref=20)
+                    linger=1, ds_ref=5)
                 tile.buffer = bf
                 tile.generator = gen
                 tile.source = src
@@ -504,6 +509,7 @@ class Main:
                 self.pos.source.remove_generator(self.pos.generator)
                 self.pos.source = None
                 self.pos.generator = None
+                self.pos.buffer = None
                 tolk.output(f"Removed.",1)
         if event.key == pygame.K_b:
             tolk.output(f"Remove.",1)
@@ -813,7 +819,7 @@ class Main:
         except Exception as err:
             print(f"{err}.")
             tolk.output(f"{err}.")
-            exit() 
+            Pdb().set_trace() 
 
         file.close()
         tolk.output(f"map saved.",1)
@@ -845,9 +851,9 @@ class Main:
                 return x
     def sensor_event(self,):
         ldegrees = [self.player.degrees - 90]
-        ldegrees += [self.player.degrees - 45]
+        ldegrees += [self.player.degrees - 25]
         ldegrees += [self.player.degrees]
-        ldegrees += [self.player.degrees + 45]
+        ldegrees += [self.player.degrees + 25]
         ldegrees += [self.player.degrees + 90]
         #ldegrees = [self.player.degrees]
         for r in range(len(ldegrees)):
@@ -865,8 +871,8 @@ class Main:
             if self.player.sensor_timers[idx] > self.ctime: 
                 continue
             x, y = self.player.position[0], self.player.position[1]
-            z = self.player.position[2]
-            ctimer = cdt_value * len(ldegrees)
+            z = 0
+            ctimer = cdt_value * (len(ldegrees) + 1)
             self.player.sensor_timers[idx] = self.ctime + ctimer
             if idx < len(ldegrees) - 1:
                 ctimer = self.ctime + cdt_value
@@ -878,15 +884,23 @@ class Main:
                 destination = self.wmap[int(y)][int(x)]
                 print(f"checking in {x, y}.")
                 if self.player.can_pass(destination) == False:
-                    print(f"Can not pass to {destination.x}, {destination.y}.")
                     x, y, z = int(x), int(y), int(z)
                     sound = "sensor01"
                     self.player.clean()
                     bf, gen, src = self.add_source3d(
-                        sound, linger=1, loop=0, position =[x, y, z])
+                        sound, linger=1, loop=0, position =[x, y, z], 
+                        )
                     self.player.generator = gen
                     self.player.source = src
-                    break                
+                    break
+                elif self.player.can_pass(destination) and r == 9:
+                    sound = "sensor01"
+                    self.player.clean()
+                    bf, gen, src = self.add_source3d(
+                        sound, linger=1, loop=0, position =[x, y, z], 
+                        gain=0.8, rolloff=0.5, pitch=0.8)
+                    self.player.generator = gen
+                    self.player.source = src                
                 
     def     set_attr(self, attrtype="str"):
         say = 1
