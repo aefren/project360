@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import gc
-import decimal
 import math
 import numpy
 import os
@@ -25,9 +24,10 @@ soundpath = os.getcwd() + str('/data/sounds/')
 
 
 class Source:
-    def __init__(self, tile):
+    def __init__(self, sound, tile):
         self.tile = tile
         self.position = self.tile.x, self.tile.y
+        self.sound = sound
     def check_complete(self):
         tile = self.tile
         position = tile.generator.playback_position.value
@@ -52,6 +52,7 @@ class Player:
         self.countdown = 500
         self._countdown = 0
         self.generator = None
+        self.lnstep = 0.06
         self.sensor_timers = [0, 0, 0, 0, 0,]
         self.foot = [
             ]
@@ -61,14 +62,10 @@ class Player:
     def can_pass(self, destination):
         if self.editor: return True
         floor = None 
-        wall = None
         if destination.floor not in self.passable_floor:
             floor = f"Can not pass {destination.floor} floor.."
-        if destination.wall not in self.passable_wall:
-            wall = f"Can not pass {destination.wall} wall.." 
-        if floor or wall:
+        if floor:
             #if floor: tolk.output(floor)
-            #if wall: tolk.output(wall)
             return False
         else: return True
     def can_walk(self):
@@ -83,11 +80,13 @@ class Player:
     def say_degrees(self):
         tolk.output(f"{self.degrees}.",1)
     def say_cdt(self):
-        x = str(self.position[0])
-        #x = x[:x.rfind(".")+3]
-        y = str(self.position[1])
-        #y = y[:y.rfind(".")+3]
-        tolk.output(f"x {x}, y {y}.",1)
+        x = str(self.position[1])
+        y = str(self.position[0])
+        if "." in x: x = x[:x.rfind(".")+3]
+        if "." in y: y = y[:y.rfind(".")+3]
+        x = float(x)
+        y = float(y)
+        tolk.output(f"y {y}, x {x}.",1)
     def set_editor(self):
         self.editor = 1
         self.countdown = 0
@@ -99,7 +98,6 @@ class Player:
         self.position = position
     def update(self):
         self.ctime = main.ctime
-        main.pos = main.wmap[int(self.position[1])][int(self.position[0])]
 
 
 class World:
@@ -118,27 +116,47 @@ class World:
     def add_tileattr(self):
         for y in self.map:
             for it in y:
+                if isinstance(it, int): continue
                 it.generator = None
                 it.source = None
-    def new_world(self):
-        
+    def initial_settings(self):
+        for y in range(len(self.map)):
+            for x in range(len(self.map[y])):
+                self.map[y][x].pos = (y, x)
+    def new_world(self, info=0):        
+        inicio = pygame.time.get_ticks()
         tolk.output(f"creating world.", 1)
         self.name = "map1"
         self.ext = ".map"
-        self.height = 700
-        self.width = 700
+        self.width = 600
+        self.length = 600
         self.map = []
-        for y in range(0, self.height, 1):
+        for y in range(0, self.length, 1):
             self.map.append([])
             for x in range(0, self.width, 1):
                 tile = Tile()
-                tile.x, tile.y = x, y
+                tile.y, tile.x = y, x
+                #tile.set_to_sand()
                 self.map[y].append(tile)
+        if info:
+            pworld = pickle.dumps(self)
+            mem = psutil.Process(os.getpid()).memory_info().rss/1024
+            print(f"pickle: {sys.getsizeof(pworld)/1024}.")
+            ctime = pygame.time.get_ticks()
+            print(f"{mem=:}.")
+            print(f"{ctime-inicio}.")
+            tolk.output(f"Done.")
+            Pdb().set_trace()
     def restart_tiles(self):
-        for ls in self.map:
-            for it in ls:
+        for y in self.map:
+            for it in y:
+                if isinstance(it, int): continue
                 it.restart_attr()
     def set_savingmap_settings(self):
+        self.players = []
+        for y in self.map:
+            for it in y: 
+                if hasattr(it, "pos"): del(it.pos)
         for pl in self.players:
             pl.clean()
         for src in self.sources:
@@ -152,27 +170,51 @@ class World:
         self.sources = [src for src in self.sources if src.tile.ambient]
         [src.update() for src in self.sources]
 
+
+tiledict = dict(
+    type="Grass",
+    foot_floor=("grass01", "grass02", "grass03", "grass04"),
+    )
+
+
+
 class Tile:
+    #===========================================================================
+    # __slots__ = [
+    #     "name", 
+    #     "type",
+    #     "generator",
+    #     "source",
+    #     "events",
+    #     "items",
+    #     "ambients",
+    #     "x",
+    #     "y",
+    #     ]
+    #===========================================================================
     def __init__(self):
-        self.name = ""
-        self.ambient = []
-        self.blocked = 0
-        #self.generator = None
-        self.items = []
-        self.jname = None
-        self.map = None
-        self.set_to_rock()
-        self.sonar = None
-        self.source = None
-        
+        pass
+        #self.type = "Sand"
+        #self.blocked = 0
+        #self.items = []
+        #self.jname = None
+        #self.map = None
+        #self.set_to_grass()
+        #self.sonar = None
+        #self.source = None
     
     def get_type(self):
         say = 1
         x = 0
         types = [
+            "Concrete",
             "Grass",
+            "Forest",
+            "None",
             "Sand",
-            "Wall",
+            "Water",
+            "Rust Wood",
+            "Wood",
             ]
         while True:
             time.sleep(0.1)
@@ -198,40 +240,104 @@ class Tile:
     def restart_attr(self):
         if self.floor == "Grass": self.set_to_grass()
         elif self.floor == "Sand": self.set_to_sand()
-        elif self.floor == "wall": self.set_to_rock()
+        elif self.floor == "wall": self.set_to_concrete()
+    def set_basic(self):
+        if hasattr(self, "blocked") == False: self.blocked = []
+    def set_to_concrete(self):
+        self.set_basic()
+        self.floor = "Concrete"
+        self.foot_floor = [
+            "ft-concrete01",
+            "ft-concrete02",
+            "ft-concrete03",
+            "ft-concrete04",
+            "ft-concrete05",
+            "ft-concrete06",
+            "ft-concrete07"
+            ]
     def set_to_grass(self):
+        self.set_basic()
         self.floor = "Grass"
-        self.wall = None
+        self.foot_floor = (
+            "ft-grass01",
+            "ft-grass02",
+            "ft-grass03",
+            "ft-grass04",
+            )
+    def set_to_forest(self):
+        self.set_basic()
+        self.floor = "Forest"
         self.foot_floor = [
-            "grass01",
-            "grass02",
-            "grass03",
-            "grass04",
+            "ft-forest01",
+            "ft-forest02",
+            "ft-forest03",
+            "ft-forest04",
+            "ft-forest05",
+            "ft-forest06",
+            "ft-forest07",
             ]
-        self.foot_wall = []
+    def set_to_none(self):
+        y, x = self.y, self.x
+        self.__dict__ = {}
+        self.y, self.x = y, x
+    def set_to_rustwood(self):
+        self.set_basic()
+        self.floor = "Rust Wood"
+        self.foot_floor = [
+            "ft-rustwood01",
+            "ft-rustwood02",
+            "ft-rustwood03",
+            "ft-rustwood04",
+            "ft-rustwood05",
+            "ft-rustwood06",
+            "ft-rustwood07"
+            ]
     def set_to_sand(self):
+        self.set_basic()
         self.floor = "Sand"
-        self.wall = None
+        self.foot_floor = (
+            "ft-sand01",
+            "ft-sand02",
+            "ft-sand03",
+            "ft-sand04",
+            "ft-sand05",
+            )
+    def set_to_water(self):
+        self.set_basic()
+        self.floor = "Water"
         self.foot_floor = [
-            "sand01",
-            "sand02",
-            "sand03",
-            "sand04",
-            "sand05",
+            "ft-water01",
+            "ft-water02",
+            "ft-water03",
+            "ft-water04",
+            "ft-water05",
+            "ft-water06",
+            "ft-water07",
+            "ft-water08",
+            "ft-water09"
             ]
-        self.foot_wall = []    
-    def set_to_rock(self):
-        self.floor = "Rock"
-        self.wall = "Wall"
-        self.foot_floor = []
-        self.foot_wall = []
+    def set_to_wood(self):
+        self.set_basic()
+        self.floor = "Wood"
+        self.foot_floor = [
+            "ft-wood01",
+            "ft-wood02",
+            "ft-wood03",
+            "ft-wood04",
+            "ft-wood05",
+            "ft-wood06"
+            ]
     def set_tiletype(self, value):
         if value == "Grass": self.set_to_grass()
+        if value == "Forest": self.set_to_forest()
+        if value == "None": self.set_to_none()
+        if value == "Concrete": self.set_to_concrete() 
+        if value == "Rust Wood": self.set_to_rustwood()
         if value == "Sand": self.set_to_sand()
-        if value == "Wall": self.set_to_rock() 
-    def say_type(self):
+        if value == "Water": self.set_to_water()
+        if value == "Wood": self.set_to_wood()
+    def say_floor(self):
         tolk.output(f"{self.floor}.")
-        if self.wall: tolk.output(f"{self.wall}.")
     def update(self):
         pass
 
@@ -253,13 +359,13 @@ class Main:
         self.sounds = []
         self.sensor = 0
         self.world = None
-        decimal.getcontext().prec = 2
     def _walk(self):
-        self.world.restart_tiles()
-        self.world.add_player(0, "player1", [2, 25, 0])
+        self.world.add_player(
+            degrees=0, name="player1", position=[3.9, 3.0, 0])
         self.player = self.world.players[0]
         self.wmap = self.world.map
-        self.pos = self.wmap[self.player.position[0]][self.player.position[1]]
+        position = self.player.position
+        self.pos = self.wmap[int(position[0])][int(position[1])]
         tolk.output(f"Explorer.",1)
         while True:
             pygame.time.Clock().tick(60)
@@ -281,7 +387,7 @@ class Main:
                         exit()
     def _edit_map(self):
         self.wmap = self.world.map
-        self.world.restart_tiles()
+        #self.world.restart_tiles()
         #self.world.add_tileattr()
         self.world.add_player(0, name="Editor", position=[2,2,0])
         self.player = self.world.players[0]
@@ -331,6 +437,7 @@ class Main:
     def add_source3d(
             self, sound, gain=None, loop=0, linger=None, position=(), z=0,
             ds_ref=None, pitch=None, rolloff=None):
+        print(f"New Buffer {sound}.")
         buffer = None
         if ".wav" not in sound: sound += ".wav"
         for sn in self.sounds:
@@ -407,6 +514,28 @@ class Main:
                         if event.key == pygame.K_ESCAPE:
                             return tolk.silence()
                             
+    def get_options(self, items):
+        say = 1
+        x = 0
+        while True:
+            pygame.time.Clock().tick(60)
+            if say:
+                say = 0
+                tolk.output(f"{items[x]}")
+            for event in pygame.event.get():
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_UP:
+                        x = self.selector(items, x, "up")
+                        say = 1
+                    if event.key == pygame.K_DOWN:
+                        x = self.selector(items, x, "down")
+                        say = 1
+                    if event.key == pygame.K_RETURN:
+                        tolk.silence()
+                        return items[x]
+                    if event.key == pygame.K_ESCAPE:
+                        tolk.silence()
+                        return
     def get_pressed_keys(self):
         self.key_pressed = pygame.key.get_pressed()
         self.alt = self.key_pressed[pygame.K_LALT]
@@ -465,12 +594,56 @@ class Main:
                             tolk.silence()
                             return 
     def get_radians(self, degrees):
-        r = decimal.Decimal(math.radians(degrees))
-        sin = decimal.Decimal(math.sin(r))
-        cos = decimal.Decimal(math.cos(r))
-        return  sin, cos
+        r = round(math.radians(degrees), 1)
+        sin = math.sin(r)
+        cos = math.cos(r)
+        return  [round(sin, 2), round(cos, 2)]
     
     
+    def get_xrange(self, xrange, dec, extra=0):
+        x = self.player.position[1]
+        if extra:
+            extra = 0
+            if int(x + xrange) > int(x): extra = 1
+            if int(x + xrange) < int(x): extra = -1
+        xrange = xrange + extra
+        x = int(x)
+        xrange = int(xrange)
+        xrange = [x, x + xrange]
+        xrange = numpy.arange(min(xrange), max(xrange) + dec, dec)
+        xrange = [round(it,1) for it in xrange]
+        return xrange
+    def get_xrange_dec(self, xrange, dec):
+        x = self.player.position[1]
+        xrange = [x, x + xrange]
+        xrange = numpy.arange(
+            round(min(xrange), 1), 
+            round(max(xrange) + dec, 1), 
+            dec)
+        xrange = [round(it,1) for it in xrange]
+        return xrange
+    def get_yrange(self, yrange, dec, extra=0):
+        y = self.player.position[0]
+        if extra:
+            extra = 0
+            if int(y + yrange) > int(y): extra = 1
+            if int(y + yrange) < int(y): extra = -1
+        yrange = yrange + extra
+        y = int(y)
+        yrange = int(yrange)
+        yrange = [y, y + yrange]
+        yrange = numpy.arange(min(yrange),  max(yrange) + dec, dec)
+        yrange = [round(it,1) for it in yrange]
+        return yrange
+    def get_yrange_dec(self, yrange, dec):
+        y = self.player.position[0]
+        yrange = [y, y + yrange]
+        yrange = numpy.arange(
+            round(min(yrange), 1), 
+            round(max(yrange) + dec, 1), 
+            dec)
+        yrange = [round(it,1) for it in yrange]
+        return yrange
     def init_source3d(self):
         for it in self.world.sources:
             tile = it.tile
@@ -482,9 +655,9 @@ class Main:
                 bf, gen, src = self.add_source3d(
                     sound, position=(tile.x, tile.y, 0), gain=2, loop=0,
                     linger=1, ds_ref=5)
-                tile.buffer = bf
-                tile.generator = gen
-                tile.source = src
+                it.buffer = bf
+                it.generator = gen
+                it.source = src
     def keys_edit_tile(self, event):
         if event.key == pygame.K_F9:
             self.save_map()
@@ -492,13 +665,7 @@ class Main:
             tolk.output(f"Add.",1)
             sound = self.get_sound(path=soundpath, filext="/*.wav")
             if sound:
-                self.pos.ambient += [sound]
-                done = 0
-                for it in self.world.sources:
-                    if it.tile == self.pos: 
-                        done = 1
-                        break
-                if done == 0: self.world.sources += [Source(self.pos)]
+                self.world.sources += [Source(self.sound, pos)]
                 tolk.output(f"Added.",1)
         if event.key == pygame.K_a and self.shift:
             tolk.output(f"Remove.",1)
@@ -512,14 +679,37 @@ class Main:
                 self.pos.buffer = None
                 tolk.output(f"Removed.",1)
         if event.key == pygame.K_b:
-            tolk.output(f"Remove.",1)
-            if self.tiles:
-                if self.tiles[0].blocked:
-                    for it in self.tiles: it.blocked = 0
-                    tolk.output(f"Not blocked.")
-                elif self.tiles[0].blocked == 0:
-                    for it in self.tiles: it.blocked = 1
-                    tolk.output(f"Blocked.")
+            items = "Add", "Remove"
+            selected = self.get_options(items)
+            if selected == None: return
+            xrange = self.get_xrange_dec(self.xrange, 0.10001)
+            yrange = self.get_yrange_dec(self.yrange, 0.10001)
+            self.select_tiles(yrange, xrange)
+            if self.tiles == []:
+                tolk.output(f"No selection.",1)
+                return
+            for tile in self.tiles:
+                for y in yrange:
+                    print(f"yrange {y}.")
+                    if int(y) > tile.y:
+                        print(f"Fin {y}.")
+                        break
+                    for x in xrange:
+                        print(f"xrange {x}.")
+                        print(f"tile {tile.y}, {tile.x}.")
+                        if int(x) > tile.x:
+                            print(f"Diferencia {y, x}.")
+                            break
+                        if int(x) != tile.x or int(y) != tile.y: continue
+                        if hasattr(tile, "floor") == False: continue
+                        if selected == "Add":
+                            if (y, x) not in tile.blocked:
+                                print(f"Added {y, x}.") 
+                                tile.blocked += [(y, x)]
+                        elif selected == "Remove":
+                            if (y, x) in tile.blocked: 
+                                tile.blocked.remove((y, x))
+                                
         if event.key == pygame.K_c:
             pass
         if event.key == pygame.K_j and self.shift:
@@ -533,6 +723,8 @@ class Main:
         if event.key == pygame.K_n:
             name = self.set_attr(attrtype="str")
             if name: self.pos.name = name
+        if event.key == pygame.K_q:
+            self.pos.say_floor()
         if event.key == pygame.K_s and self.shift:
             self.pos.ambient = ["forest01"]
             return
@@ -547,20 +739,24 @@ class Main:
         if event.key == pygame.K_x:
             self.player.say_cdt()
         if event.key == pygame.K_PAGEUP:
-            self.xrange -= 1
-            if self.shift: self.xrange -= 9
+            self.xrange -= 0.1
+            if self.ctrl: self.xrange -= 0.9
+            self.xrange = round(self.xrange ,1)
             tolk.output(f"X range: {self.xrange}.")
         if event.key == pygame.K_PAGEDOWN:
-            self.xrange += 1
-            if self.shift: self.xrange += 9
+            self.xrange += 0.1
+            if self.ctrl: self.xrange += 0.9
+            self.xrange = round(self.xrange, 1)
             tolk.output(f"X range: {self.xrange}.")
         if event.key == pygame.K_HOME:
-            self.yrange += 1
-            if self.shift: self.yrange += 9 
+            self.yrange += 0.1
+            if self.ctrl: self.yrange += 0.9 
+            self.yrange = round(self.yrange,1)
             tolk.output(f"Y range: {self.yrange}.")
         if event.key == pygame.K_END:
-            self.yrange -= 1
-            if self.shift: self.yrange -= 9
+            self.yrange -= 0.1
+            if self.ctrl: self.yrange -= 0.9
+            self.yrange = round(self.yrange,1)
             tolk.output(f"Y range: {self.yrange}.")
         if event.key == pygame.K_DELETE:
             self.yrange =0
@@ -571,28 +767,11 @@ class Main:
             tolk.output(f"Cleaned.", 1)
         if event.key == pygame.K_SPACE:
             tolk.silence()
-            xrange = [int(self.x), int(self.x) + self.xrange]
-            xrange = range(min(xrange), max(xrange) + 1)
-            yrange = [int(self.y), int(self.y) + self.yrange]
-            yrange = range(min(yrange), max(yrange) + 1)
-            wmap = self.world.map
-            print(f"{xrange=:}, {yrange=:}.")
-            idy = yrange[0] -1
-            for y in wmap[yrange[0]:yrange[-1]+1]:
-                idy += 1
-                print(f"{idy=:}.")
-                if idy not in yrange: continue
-                idx = xrange[0] -1
-                for x in y[xrange[0]:xrange[-1]+1]:
-                    idx += 1
-                    print(f"{idx=:}.")
-                    if x in self.tiles: continue
-                    if x.blocked: continue
-                    if idx not in xrange: continue
-                    self.tiles += [x]
-                    print(f"added.")
-            tolk.output(f"{len(self.tiles)}tiles selected.")
-            return
+            xrange = self.get_xrange(self.xrange, 1)
+            yrange = self.get_yrange(self.yrange,1)
+            print(yrange)
+            print(xrange)
+            self.select_tiles(yrange, xrange)
     def keys_global(self, event):
         if event.key == pygame.K_e:
             if self.sensor == 0:
@@ -610,16 +789,20 @@ class Main:
         self.keys_edit_tile(event)        
         # Map movement.
         if event.key == pygame.K_DOWN:
-            self.Move_object(self.player, degrees=180)
+            if self.ctrl == 0: self.move_editor(self.player, 180)
+            elif self.ctrl: self.move_editor(self.player, 180, 1)
             self.set_map_move()
         if event.key == pygame.K_UP:
-            self.Move_object(self.player, degrees=0)
+            if self.ctrl == 0: self.move_editor(self.player, 0)
+            elif self.ctrl: self.move_editor(self.player, 0, 1)
             self.set_map_move()
-        if event.key == pygame.K_LEFT and self.ctrl == 0:
-            self.Move_object(self.player, degrees=270)
+        if event.key == pygame.K_LEFT:
+            if self.ctrl == 0: self.move_editor(self.player, 270)
+            elif self.ctrl: self.move_editor(self.player, 270, 1)
             self.set_map_move()
-        if event.key == pygame.K_RIGHT and self.ctrl == 0:
-            self.Move_object(self.player, degrees=90)
+        if event.key == pygame.K_RIGHT:
+            if self.ctrl == 0: self.move_editor(self.player, 90)
+            elif self.ctrl: self.move_editor(self.player, 90, 1)
             self.set_map_move()
     def keys_object_movement(self):
         if self.key_pressed[pygame.K_w]:
@@ -628,11 +811,11 @@ class Main:
             self.Move_object(self.player, 1)
     def keys_set_degree(self, event):
         if self.player.editor:
-            if event.key == pygame.K_LEFT and self.ctrl:
+            if event.key == pygame.K_LEFT and self.shift:
                 self.player.degrees -= 45
                 if self.player.degrees < 0: self.player.degrees += 360
                 self.player.say_degrees()
-            if event.key == pygame.K_RIGHT and self.ctrl:
+            if event.key == pygame.K_RIGHT and self.shift:
                 self.player.degrees += 45
                 if self.player.degrees > 360: self.player.degrees -= 360
                 if self.player.degrees == 360: self.player.degrees = 0
@@ -702,16 +885,18 @@ class Main:
                     if event.key == pygame.K_RETURN:
                         if maps:
                             tolk.output(f"LOADING...",1)
-                            self.world = World()
-                            world = pickle.load(file)
-                            self.world.name = world.name
-                            self.world.ext = world.ext
-                            self.world.jumppoints = world.jumppoints
-                            self.world.height = world.height
-                            self.world.width = world.width
-                            self.world.map = world.map
-                            self.world.sources = world.sources
-                            self.world.update()
+                            #self.world = World()
+                            self.world = pickle.load(file)
+                            #self.world.name = world.name
+                            #self.world.ext = world.ext
+                            #self.world.jumppoints = world.jumppoints
+                            #self.world.length = world.length
+                            #self.world.width = world.width
+                            #self.world.map = world.map
+                            #self.world.sources = world.sources
+                            #self.world.initial_settings()
+                            file.close()
+                            
                             return
                         else: tolk.output(f"no maps.", 1)
                     if event.key == pygame.K_F12:
@@ -721,42 +906,69 @@ class Main:
                     if event.key == pygame.K_ESCAPE:
                         return
     def map_info(self):
-        self.pos.update()
-        if self.pos.name: tolk.output(f"{self.pos.name}.")
-        self.pos.say_type()
-        if self.pos.ambient: tolk.output(f"Ambient sounds.")
-        if self.pos.jname: tolk.output(f"{self.pos.jname}.")
+        if hasattr(self.pos, "floor"):
+            if hasattr(self.pos, "name"): tolk.output(f"{self.name}.")
+            self.pos.say_floor()
+            if hasattr(self.pos, "ambient"): tolk.output(f"Ambient sounds.")
+            if hasattr(self.pos, "jname"): tolk.output(f"{self.pos.jname}.")
+        else: tolk.output(f"y {self.pos.y}, x {self.pos.x}.",1)
         if self.pos in self.tiles: tolk.output(f"Selected.")
+    def move_editor(self, unit, degrees, lnstep=None):
+        x = unit.position[1]
+        y = unit.position[0]
+        if degrees == None: degrees = unit.degrees
+        if lnstep == None: lnstep=unit.lnstep
+        radians = self.get_radians(degrees)
+        radians[0] *= lnstep
+        radians[1] *= lnstep
+        x = round(x + radians[0], 1)
+        y = round(y + radians[1], 1)
+        unit.position = y, x, 0
+        destination = self.wmap[int(y)][int(x)]
+        if hasattr(destination, "floor") == False: return
+        if hasattr(destination, "foot_floor"):
+            sound = choice(destination.foot_floor)
+            unit.clean()
+            bf, gen, src = self.add_source3d(
+                sound, gain=1, loop=0, linger=1, position=unit.position)
+            unit.generator = gen
+            unit.source = src
     def Move_object(self, unit, backward=0, degrees=None):
         if unit.can_walk():
             unit._countdown = self.ctime + unit.countdown
-            x = unit.position[0]
-            y = unit.position[1]
+            x = unit.position[1]
+            y = unit.position[0]
             if degrees == None: degrees = unit.degrees
             if backward:
                 degrees += 180
                 if degrees > 360: degrees -= 361
             radians = self.get_radians(degrees)
+            radians[0] *= unit.lnstep
+            radians[1] *= unit.lnstep
             x += radians[0]
             y += radians[1]
             destination = self.wmap[int(y)][int(x)]
-            if unit.can_pass(destination):
-                unit.position = x, y, 0
-                if destination.foot_floor:
-                    sound = choice(destination.foot_floor)
-                    unit.clean()
-                    bf, gen, src = self.add_source3d(
-                        sound, gain=1, loop=0, linger=1, position=unit.position)
-                    unit.generator = gen
-                    unit.source = src
-            else: 
-                tolk.output(f"Can not move there.",1)
-                try:
-                    if destination.foot_wall:
-                        sound = choice(destination.foot_wall)
-                        self.add_directsound(sound)
-                except Exception: Pdb().set_trace()
-    
+            if hasattr(destination, "floor") == False:
+                tolk.output(f"Can not move there.")
+                return
+            ypos = str(y)
+            xpos = str(x)
+            if "." in ypos: ypos = ypos[:ypos.rfind(".")+2]
+            if "." in xpos: xpos = xpos[:xpos.rfind(".")+2]
+            ypos = float(ypos)
+            xpos = float(xpos)
+            print(f"Future pos {ypos, xpos}.")
+            if (ypos, xpos) in destination.blocked:
+                tolk.output(f"Can not move there.")
+                return  
+            unit.position = y, x, 0
+            if destination.foot_floor:
+                sound = choice(destination.foot_floor)
+                unit.clean()
+                bf, gen, src = self.add_source3d(
+                    sound, gain=1, loop=0, linger=1, position=unit.position)
+                unit.generator = gen
+                unit.source = src
     def remove_jumppoints(self):
         tolk.output(f"Remove a jump point.",1)
         jumppoints = self.world.jumppoints
@@ -825,6 +1037,29 @@ class Main:
         tolk.output(f"map saved.",1)
         time.sleep(1)
 
+    def select_tiles(self, yrng, xrng):
+        yrng = [int(it) for it in yrng]
+        xrng = [int(it) for it in xrng]
+        yrange = []
+        for it in yrng: 
+            if it not in yrange: yrange += [it]
+        xrange = []
+        for it in xrng: 
+            if it not in xrange: xrange += [it]
+        wmap = self.world.map
+        idy = yrange[0] -1
+        for y in wmap[yrange[0]:yrange[-1]+1]:
+            idy += 1
+            if idy not in yrange: continue
+            idx = xrange[0] -1
+            for x in y[xrange[0]:xrange[-1]+1]:
+                idx += 1
+                if x in self.tiles: continue
+                if idx not in xrange: continue
+                if hasattr(x, "floor") == False: continue
+                self.tiles += [x]
+        tolk.output(f"{len(self.tiles)}tiles selected.")
+        return
     def selector(self, item, x, go='', wrap=0):
         tolk.silence()
         if len(item) == 0:
@@ -971,6 +1206,17 @@ class Main:
                             i -= 1
                             if i < 0: i = 0
                     
+    
+    def set_map_move(self):
+        self.y, self.x = self.player.position[0], self.player.position[1]
+        self.y, self.x = int(self.y), int(self.x)
+        old_pos = self.pos
+        self.pos = self.world.map[int(self.y)][int(self.x)]
+        if hasattr(self.pos, "floor"):
+            if self.player.position[:2] in self.pos.blocked: 
+                tolk.output(f"Blocked.")
+        if old_pos != self.pos:
+            self.map_info()
     def set_orientation(self):
         degrees = self.player.degrees
         x, y, z = 0, 0, 0
@@ -981,13 +1227,6 @@ class Main:
         at = [x, y, z]
         up = [0, 0, 1]
         self.ctx.orientation.value = at + up
-    def set_map_move(self):
-        self.x, self.y = self.player.position[0], self.player.position[1]
-        self.x, self.y = int(self.x), int(self.y)
-        self.pos = self.world.map[int(self.y)][int(self.x)]
-        self.map_info()
-
-    
     def start_menu(self):
         say = 1
         x = 0
@@ -1046,5 +1285,5 @@ class Main:
 
 
 if __name__ == "__main__":
-    main = Main()    
+    main = Main()
     main.start_menu()
