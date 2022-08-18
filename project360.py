@@ -23,11 +23,25 @@ wav = '.wav'
 soundpath = os.getcwd() + str('/data/sounds/')
 
 
-class Source:
-    def __init__(self, sound, tile):
-        self.tile = tile
-        self.position = self.tile.x, self.tile.y
-        self.sound = sound
+
+class EmptyClass:
+    def __init__(self):
+        pass
+
+class SoundEvent:
+    def __init__(self, position):
+        self.position = position
+        self.sounds = []
+        self.source = None
+        
+        self.loop = 1
+        self.distance_ref = 1
+        self.gain = 1
+        self.rolloff = 1
+        self.z = 0
+    def add_sound(self):
+        sound = main.get_sound(path=soundpath, filext="/*.wav")
+        self.sounds += [sound]
     def check_complete(self):
         tile = self.tile
         position = tile.generator.playback_position.value
@@ -35,12 +49,13 @@ class Source:
         if length == position:
             self.clean() 
     def clean(self):
-        tile = self.tile
-        tile.source.remove_generator(tile.generator)
-        tile.source.dec_ref()
-        tile.source = None
-        tile.generator.dec_ref()
-        tile.generator = None
+        if self.source:
+            self.source.remove_generator(self.generator)
+            self.source.dec_ref()
+            self.source = None
+            self.generator.dec_ref()
+            del(self.generator)
+            del(self.buffer)
     def update(self):
         pass
 
@@ -104,6 +119,7 @@ class World:
     def __init__(self):
         self.name = None
         self.jumppoints = []
+        self.locations = []
         self.players = []
         self.sources = []
     
@@ -160,14 +176,9 @@ class World:
         for pl in self.players:
             pl.clean()
         for src in self.sources:
-            if src.tile.source:
-                src.tile.source.pause()
-                src.tile.buffer = None
-                src.tile.source.remove_generator(src.tile.generator)
-                src.tile.source = None
-                src.tile.generator = None
+            if src.source:
+                src.clean()
     def update(self):
-        self.sources = [src for src in self.sources if src.tile.ambient]
         [src.update() for src in self.sources]
 
 
@@ -337,7 +348,7 @@ class Tile:
         if value == "Water": self.set_to_water()
         if value == "Wood": self.set_to_wood()
     def say_floor(self):
-        tolk.output(f"{self.floor}.")
+        if hasattr(self, "floor"): tolk.output(f"{self.floor}.")
     def update(self):
         pass
 
@@ -372,7 +383,6 @@ class Main:
             self.update()
             self.player.update()
             self.get_pressed_keys()
-            self.ctx.position.value = self.player.position
             if self.sensor: self.sensor_event()
             self.keys_object_movement()
             for event in pygame.event.get():
@@ -389,7 +399,7 @@ class Main:
         self.wmap = self.world.map
         #self.world.restart_tiles()
         #self.world.add_tileattr()
-        self.world.add_player(0, name="Editor", position=[2,2,0])
+        self.world.add_player(0, name="Editor", position=[3.5,2.5,0])
         self.player = self.world.players[0]
         self.player.set_editor()
         self.pos = self.wmap[0][0]
@@ -400,8 +410,8 @@ class Main:
         self.set_map_move()
         tolk.output(f"Editor.",1)
         while  True:
-            pygame.time.Clock().tick(60)
-            self.update(editing=1)
+            pygame.time.Clock().tick(30)
+            self.update()
             self.get_pressed_keys()
             for event in pygame.event.get():
                 if event.type == pygame.KEYDOWN:
@@ -426,14 +436,16 @@ class Main:
         src = syn.DirectSource(self.ctx)
         src.add_generator(generator)
     def add_jumppoint(self):
-        jname = self.set_attr(attrtype="str")
-        if jname == None: return
-        x, y, = self.player.position[0], self.player.position[1],
-        x, y = int(x), int(y) 
-        tile = self.pos
-        tile.jname = jname
-        tile.jposition = x, y, 0
-        self.world.jumppoints += [tile]
+        name = self.set_attr(attrtype="str")
+        if name == None: return
+        jumppoint = EmptyClass()
+        jumppoint.position = self.player.position
+        jumppoint.name = name
+        self.world.jumppoints += [jumppoint]
+    
+    def add_location_event(self):
+        tolk.output(f"Not yet created.",1)
+    
     def add_source3d(
             self, sound, gain=None, loop=0, linger=None, position=(), z=0,
             ds_ref=None, pitch=None, rolloff=None):
@@ -460,6 +472,12 @@ class Main:
             source.config_delete_behavior(linger=True)
         source.add_generator(generator)
         return buffer, generator, source
+    def add_sound_event(self):
+        name = self.set_attr(attrtype="str")
+        if name == None: return
+        source = SoundEvent(self.player.position)
+        source.name = name
+        self.world.sources += [source]
     def get_distance(self, source, current):
         distx = abs(source[0] - current[0])
         disty = abs(source[1] - current[1])
@@ -474,47 +492,8 @@ class Main:
                     location = [x, y, 0]
                     if timer: print(f"ends at {pygame.time.get_ticks()}.") 
                     return location 
-    def get_jumppoint(self):
-        tolk.output(f"move to a jump point.",1)
-        jumppoints = self.world.jumppoints
-        say = 1
-        x = 0
-        while True:
-            pygame.time.Clock().tick(60)
-            if say:
-                say = 0
-                if jumppoints == []: 
-                    tolk.output(f"No jump points.")
-                    continue
-                tolk.output(f"{jumppoints[x].jname}.")
-                tolk.output(f"at {jumppoints[x].jposition}.") 
-            for event in pygame.event.get():
-                    if event.type == pygame.KEYDOWN:
-                        if event.key == pygame.K_UP:
-                            x = self.selector(jumppoints, x, go="up")
-                            say = 1
-                        if event.key == pygame.K_DOWN:
-                            x = self.selector(jumppoints, x, go="down")
-                            say = 1
-                        if event.key == pygame.K_HOME:
-                            x = 0
-                            say = 1
-                        if event.key == pygame.K_END:
-                            x = len(jumppoints) - 1
-                            say = 1
-                        if event.key == pygame.K_RETURN:
-                            if jumppoints == []: return tolk.silence()
-                            self.player.position = jumppoints[x].jposition
-                            tolk.silence()
-                            return self.set_map_move()
-                        if event.key == pygame.K_F12:
-                            tolk.output(f"Debug On.",1)
-                            Pdb().set_trace()
-                            tolk.output(f"Debug Off.")
-                        if event.key == pygame.K_ESCAPE:
-                            return tolk.silence()
-                            
     def get_options(self, items):
+        items.sort()
         say = 1
         x = 0
         while True:
@@ -646,40 +625,36 @@ class Main:
         return yrange
     def init_source3d(self):
         for it in self.world.sources:
-            tile = it.tile
-            if tile.source: continue
+            if it.sounds == []: continue
+            if it.source: continue
             distance = self.get_distance(it.position, self.player.position)
             if distance < self.ctx.default_distance_max.value:
-                print(f"Adding sound in {tile.x, tile.y}.")
-                sound = choice(tile.ambient)
+                print(f"Adding sound in {it.position}.")
+                sound = choice(it.sounds)
                 bf, gen, src = self.add_source3d(
-                    sound, position=(tile.x, tile.y, 0), gain=2, loop=0,
-                    linger=1, ds_ref=5)
+                    sound, position=it.position, linger=1)
                 it.buffer = bf
                 it.generator = gen
                 it.source = src
+                
+                it.generator.looping.value = it.loop
+                
+                it.source.distance_ref.value = it.distance_ref
+                it.source.gain.value = it.gain
+                it.source.rolloff.value = it.rolloff
+    
     def keys_edit_tile(self, event):
         if event.key == pygame.K_F9:
             self.save_map()
         if event.key == pygame.K_a and self.ctrl:
             tolk.output(f"Add.",1)
-            sound = self.get_sound(path=soundpath, filext="/*.wav")
-            if sound:
-                self.world.sources += [Source(self.sound, pos)]
-                tolk.output(f"Added.",1)
-        if event.key == pygame.K_a and self.shift:
-            tolk.output(f"Remove.",1)
-            sound = self.get_sound(
-                path=self.pos.ambient, filext="/*.wav", islist=1)
-            if sound:
-                self.pos.ambient.remove(sound)
-                self.pos.source.remove_generator(self.pos.generator)
-                self.pos.source = None
-                self.pos.generator = None
-                self.pos.buffer = None
-                tolk.output(f"Removed.",1)
+            items = ["Sound Event", "Location", "Jump Point"]
+            selected = self.get_options(items)
+            if selected == "Jump Point": self.add_jumppoint()
+            elif selected == "Location": self.add_location_event()
+            if selected == "Sound Event": self.add_sound_event()
         if event.key == pygame.K_b:
-            items = "Add", "Remove"
+            items = ["Add", "Remove"]
             selected = self.get_options(items)
             if selected == None: return
             xrange = self.get_xrange_dec(self.xrange, 0.10001)
@@ -712,14 +687,6 @@ class Main:
                                 
         if event.key == pygame.K_c:
             pass
-        if event.key == pygame.K_j and self.shift:
-            self.remove_jumppoints()
-            return
-        if event.key == pygame.K_j and self.ctrl:
-            self.add_jumppoint()
-            return
-        if event.key == pygame.K_j:
-            self.get_jumppoint()
         if event.key == pygame.K_n:
             name = self.set_attr(attrtype="str")
             if name: self.pos.name = name
@@ -736,6 +703,13 @@ class Main:
                 return
             tiletype = self.pos.get_type()
             [it.set_tiletype(tiletype) for it in self.tiles]
+        if event.key == pygame.K_v:
+            tolk.output(f"View.",1)
+            items = ["Sound Events", "Locations", "Jump Points"]
+            selected = self.get_options(items)
+            if selected == "Sound Events": self.view_sound_events()
+            elif selected == "Locations": self.view_location_events()
+            elif selected == "Jump Points": self.view_jumppoint()
         if event.key == pygame.K_x:
             self.player.say_cdt()
         if event.key == pygame.K_PAGEUP:
@@ -769,8 +743,6 @@ class Main:
             tolk.silence()
             xrange = self.get_xrange(self.xrange, 1)
             yrange = self.get_yrange(self.yrange,1)
-            print(yrange)
-            print(xrange)
             self.select_tiles(yrange, xrange)
     def keys_global(self, event):
         if event.key == pygame.K_e:
@@ -969,52 +941,11 @@ class Main:
                     sound, gain=1, loop=0, linger=1, position=unit.position)
                 unit.generator = gen
                 unit.source = src
-    def remove_jumppoints(self):
-        tolk.output(f"Remove a jump point.",1)
-        jumppoints = self.world.jumppoints
-        say = 1
-        x = 0
-        while True:
-            pygame.time.Clock().tick(60)
-            if say:
-                say = 0
-                if jumppoints == []: 
-                    tolk.output(f"No jump points.")
-                    continue
-                tolk.output(f"{jumppoints[x].jname}.")
-                tolk.output(f"at {jumppoints[x].jposition}.")
-            for event in pygame.event.get():
-                    if event.type == pygame.KEYDOWN:
-                        if event.key == pygame.K_UP:
-                            x = self.selector(jumppoints, x, go="up")
-                            say = 1
-                        if event.key == pygame.K_DOWN:
-                            x = self.selector(jumppoints, x, go="down")
-                            say = 1
-                        if event.key == pygame.K_HOME:
-                            x = 0
-                            say = 1
-                        if event.key == pygame.K_END:
-                            x = len(jumppoints) - 1
-                            say = 1
-                        if event.key == pygame.K_RETURN:
-                            if jumppoints == []: return tolk.silence()
-                            tile = jumppoints[x]
-                            tile.jname = None
-                            self.world.jumppoints.remove(jumppoints[x])
-                            tolk.output(f"Removed",1)
-                            tolk.silence()
-                            return
-                        if event.key == pygame.K_F12:
-                            tolk.output(f"Debug On.",1)
-                            Pdb().set_trace()
-                            tolk.output(f"Debug Off.")
-                        if event.key == pygame.K_ESCAPE:
-                            return tolk.silence()
+    
     def remove_source3d(self):
         for src in self.world.sources:
             distance = self.get_distance(src.position, self.player.position)
-            if src.tile.source == None: continue
+            if src.sounds == []: continue
             if distance <= self.ctx.default_distance_max.value + 1: continue
             src.clean()
             
@@ -1056,7 +987,6 @@ class Main:
                 idx += 1
                 if x in self.tiles: continue
                 if idx not in xrange: continue
-                if hasattr(x, "floor") == False: continue
                 self.tiles += [x]
         tolk.output(f"{len(self.tiles)}tiles selected.")
         return
@@ -1224,8 +1154,8 @@ class Main:
         if degrees in range(91, 270): y = -1
         if degrees in range(1, 180): x = 1
         if degrees > 180: x = 1
-        at = [x, y, z]
-        up = [0, 0, 1]
+        at = [y, x, z]
+        up = [0, 0, -1]
         self.ctx.orientation.value = at + up
     def start_menu(self):
         say = 1
@@ -1273,7 +1203,182 @@ class Main:
                             self._edit_map()
                     if event.key == pygame.K_ESCAPE:
                         exit()
-    def update(self, editing=0):
+    def view_jumppoint(self):
+        jumppoints = self.world.jumppoints
+        say = 1
+        x = 0
+        while True:
+            pygame.time.Clock().tick(60)
+            self.update()
+            if say:
+                if x  >= len(jumppoints): x -= 1
+                say = 0
+                if jumppoints == []: 
+                    tolk.output(f"No jump points.")
+                    continue
+                tolk.output(f"{jumppoints[x].name}.")
+                tolk.output(f"at {jumppoints[x].position}.")
+            for event in pygame.event.get():
+                    if event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_UP:
+                            x = self.selector(jumppoints, x, go="up")
+                            say = 1
+                        if event.key == pygame.K_DOWN:
+                            x = self.selector(jumppoints, x, go="down")
+                            say = 1
+                        if event.key == pygame.K_HOME:
+                            x = 0
+                            say = 1
+                        if event.key == pygame.K_END:
+                            x = len(jumppoints) - 1
+                            say = 1
+                        if event.key == pygame.K_DELETE:
+                            self.world.jumppoints.remove(jumppoints[x])
+                            tolk.output(f"Removed.",1)
+                        if event.key == pygame.K_RETURN:
+                            if jumppoints == []: return tolk.silence()
+                            self.player.position = jumppoints[x].position
+                            tolk.silence()
+                            return self.set_map_move()
+                        if event.key == pygame.K_F12:
+                            tolk.output(f"Debug On.",1)
+                            Pdb().set_trace()
+                            tolk.output(f"Debug Off.")
+                        if event.key == pygame.K_ESCAPE:
+                            return tolk.silence()
+    def view_location_events(self):
+        tolk.output(f"Remove a jump point.",1)
+        events = self.world.locations
+        say = 1
+        x = 0
+        while True:
+            pygame.time.Clock().tick(60)
+            self.update()
+            if say:
+                if x  >= len(events): x -= 1
+                say = 0
+                if events == []: 
+                    tolk.output(f"No jump points.")
+                    continue
+                tolk.output(f"{events[x].name}.")
+                tolk.output(f"at {events[x].jposition}.")
+            for event in pygame.event.get():
+                    if event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_UP:
+                            x = self.selector(events, x, go="up")
+                            say = 1
+                        if event.key == pygame.K_DOWN:
+                            x = self.selector(events, x, go="down")
+                            say = 1
+                        if event.key == pygame.K_HOME:
+                            x = 0
+                            say = 1
+                        if event.key == pygame.K_END:
+                            x = len(events) - 1
+                            say = 1
+                        if event.key == pygame.K_RETURN:
+                            if events == []: return tolk.silence()
+                            tile = events[x]
+                            tile.jname = None
+                            self.world.jumppoints.remove(jumppoints[x])
+                            tolk.output(f"Removed",1)
+                            tolk.silence()
+                            return
+                        if event.key == pygame.K_F12:
+                            tolk.output(f"Debug On.",1)
+                            Pdb().set_trace()
+                            tolk.output(f"Debug Off.")
+                        if event.key == pygame.K_ESCAPE:
+                            return tolk.silence()
+    def view_sound_events(self):
+        
+        
+        events = self.world.sources
+        say = 1
+        x = 0
+        y = 0
+        while True:
+            pygame.time.Clock().tick(30)
+            self.update()
+            it = events[x]
+            params = [
+                [f"Name", it, "name"],
+                [f"Position", it, "position"],
+                [f"Gain", it.source.gain, "value"],
+                [f"distance max", events[x].source.distance_max, "value"],
+                [f"distance ref", events[x].source.distance_ref.value],
+                [f"RollOff", it.source.rolloff, "value" ],
+                ]
+            if say:
+                if x  >= len(events): x -= 1
+                say = 0
+                if events == []:
+                    tolk.output(f"No sound events.")
+                    continue
+                tolk.output(f"{params[y][0]} \
+                {getattr(params[y][1], params[y][2])}.")
+            for event in pygame.event.get():
+                    if event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_a:
+                            events[x].add_sound()
+                        if event.key == pygame.K_u:
+                            attr = getattr(params[y][1], params[y][2])
+                            if isinstance(attr, str) == False:
+                                attr += 1
+                                setattr(params[y][1], params[y][2], attr)
+                                say = 1
+                        if event.key == pygame.K_j:
+                            attr = getattr(params[y][1], params[y][2])
+                            if isinstance(attr, str) == False:
+                                attr -= 1
+                                setattr(params[y][1], params[y][2], attr)
+                                say = 1
+                        if event.key == pygame.K_i:
+                            attr = getattr(params[y][1], params[y][2])
+                            if isinstance(attr, str) == False:
+                                attr = round(attr + 0.1, 2)
+                                setattr(params[y][1], params[y][2], attr)
+                                say = 1
+                        if event.key == pygame.K_k:
+                            attr = getattr(params[y][1], params[y][2])
+                            if isinstance(attr, str) == False:
+                                attr = round(attr - 0.1, 2)
+                                setattr(params[y][1], params[y][2], attr)
+                                say = 1
+                        if event.key == pygame.K_LEFT:
+                            x = self.selector(events, x, "up")
+                            say = 1
+                        if event.key == pygame.K_RIGHT:
+                            x = self.selector(events, x, "down")
+                            say = 1
+                        if event.key == pygame.K_UP:
+                            y = self.selector(params, y, "up")
+                            say = 1
+                        if event.key == pygame.K_DOWN:
+                            y = self.selector(params, y, "down")
+                            say = 1
+                        if event.key == pygame.K_HOME:
+                            x = 0
+                            say = 1
+                        if event.key == pygame.K_END:
+                            x = len(events) - 1
+                            say = 1
+                        if event.key == pygame.K_DELETE:
+                            event[x].clean()
+                            self.world.sources.remove(events[x])
+                            tolk.output(f"Removed.",1)
+                        if event.key == pygame.K_RETURN:
+                            if events== []: return tolk.silence()
+                            self.player.position = events[x].position
+                            tolk.silence()
+                            return self.set_map_move()                            
+                        if event.key == pygame.K_F12:
+                            tolk.output(f"Debug On.",1)
+                            Pdb().set_trace()
+                            tolk.output(f"Debug Off.")
+                        if event.key == pygame.K_ESCAPE:
+                            return tolk.silence()
+    def update(self):
         self.ctime = pygame.time.get_ticks()
         self.world.update()
         self.init_source3d()
