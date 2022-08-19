@@ -30,15 +30,19 @@ class EmptyClass:
 
 class SoundEvent:
     def __init__(self, position):
+        self.y = position[0]
+        self.x = position[1]
+        self.z = position[2]
         self.position = position
         self.sounds = []
         self.source = None
         
-        self.loop = 1
         self.distance_ref = 1
+        self.distance_max = 1
         self.gain = 1
+        self.loop = 1
+        self.pitch_bend = 1
         self.rolloff = 1
-        self.z = 0
     def add_sound(self):
         sound = main.get_sound(path=soundpath, filext="/*.wav")
         self.sounds += [sound]
@@ -57,7 +61,15 @@ class SoundEvent:
             del(self.generator)
             del(self.buffer)
     def update(self):
-        pass
+        if self.source:
+            self.generator.looping.value = self.loop
+            self.generator.pitch_bend.value = self.pitch_bend
+            
+            self.source.gain.value = self.gain
+            self.source.position.value = self.position
+            self.source.distance_ref.value = self.distance_ref
+            self.source.distance_max.value = self.distance_max
+            self.source.rolloff.value = self.rolloff
 
 
 class Player:
@@ -144,8 +156,8 @@ class World:
         tolk.output(f"creating world.", 1)
         self.name = "map1"
         self.ext = ".map"
-        self.width = 600
-        self.length = 600
+        self.width = 612
+        self.length = 612
         self.map = []
         for y in range(0, self.length, 1):
             self.map.append([])
@@ -397,9 +409,7 @@ class Main:
                         exit()
     def _edit_map(self):
         self.wmap = self.world.map
-        #self.world.restart_tiles()
-        #self.world.add_tileattr()
-        self.world.add_player(0, name="Editor", position=[3.5,2.5,0])
+        self.world.add_player(0, name="Editor", position=[360, 50, 0])
         self.player = self.world.players[0]
         self.player.set_editor()
         self.pos = self.wmap[0][0]
@@ -1150,12 +1160,12 @@ class Main:
     def set_orientation(self):
         degrees = self.player.degrees
         x, y, z = 0, 0, 0
-        if degrees > 270 or degrees in range(0, 90): y = 1
-        if degrees in range(91, 270): y = -1
+        if degrees > 270 or degrees in range(0, 90): y = -1
+        if degrees in range(91, 270): y = i1
         if degrees in range(1, 180): x = 1
         if degrees > 180: x = 1
         at = [y, x, z]
-        up = [0, 0, -1]
+        up = [0, 0, 1]
         self.ctx.orientation.value = at + up
     def start_menu(self):
         say = 1
@@ -1299,28 +1309,40 @@ class Main:
         y = 0
         while True:
             pygame.time.Clock().tick(30)
-            self.update()
-            it = events[x]
-            params = [
-                [f"Name", it, "name"],
-                [f"Position", it, "position"],
-                [f"Gain", it.source.gain, "value"],
-                [f"distance max", events[x].source.distance_max, "value"],
-                [f"distance ref", events[x].source.distance_ref.value],
-                [f"RollOff", it.source.rolloff, "value" ],
-                ]
+            
             if say:
                 if x  >= len(events): x -= 1
                 say = 0
                 if events == []:
                     tolk.output(f"No sound events.")
                     continue
+                
+                self.update()
+                it = events[x]
+                params = [
+                    [f"Name", it, "name"],
+                    [f"Position", it, "position"],
+                    [f"position y", it, "y"],
+                    [f"position x", it, "x"],
+                    [f"position z", it, "z"[0]],
+                    [f"Gain", it, "gain"],
+                    [f"distance max", it, "distance_max"],
+                    [f"distance ref", it, "distance_ref"],
+                    [f"RollOff", it, "rolloff" ],
+                    [f"Loop", it, "loop"],
+                    ["Pitch bend", it, "pitch_bend"],
+                    ]
+                it.position = it.y, it.x, it.z
+                it.update()
                 tolk.output(f"{params[y][0]} \
                 {getattr(params[y][1], params[y][2])}.")
             for event in pygame.event.get():
                     if event.type == pygame.KEYDOWN:
                         if event.key == pygame.K_a:
                             events[x].add_sound()
+                        if event.key == pygame.K_n:
+                            name = self.set_attr(attrtype="str")
+                            if name: it.name = name
                         if event.key == pygame.K_u:
                             attr = getattr(params[y][1], params[y][2])
                             if isinstance(attr, str) == False:
@@ -1330,6 +1352,7 @@ class Main:
                         if event.key == pygame.K_j:
                             attr = getattr(params[y][1], params[y][2])
                             if isinstance(attr, str) == False:
+                                if attr <= 0: return
                                 attr -= 1
                                 setattr(params[y][1], params[y][2], attr)
                                 say = 1
@@ -1342,15 +1365,18 @@ class Main:
                         if event.key == pygame.K_k:
                             attr = getattr(params[y][1], params[y][2])
                             if isinstance(attr, str) == False:
+                                if attr <= 0: continue
                                 attr = round(attr - 0.1, 2)
                                 setattr(params[y][1], params[y][2], attr)
                                 say = 1
                         if event.key == pygame.K_LEFT:
                             x = self.selector(events, x, "up")
                             say = 1
+                            y = 0
                         if event.key == pygame.K_RIGHT:
                             x = self.selector(events, x, "down")
                             say = 1
+                            y = 0
                         if event.key == pygame.K_UP:
                             y = self.selector(params, y, "up")
                             say = 1
