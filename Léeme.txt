@@ -1,0 +1,18 @@
+Este es un ejemplo muy básico de un mundo casi vacío.
+1. Primero hay que instalar Python, luego las librerías que se utilizan para ejecutar el prototipo de juego.
+2. 1. Instalar el archivo Python que viene en la carpeta donde se extrajo el rar.
+Es 100% accesible. Solo hay que activar la casilla que pone agregar variables de entorno, para todo lo demás basta con darle a siguiente. 
+3. 2. Una vez se termine de instalar, Abrir la consola y escribir lo siguiente para agregar las librerías de Python:
+4. Pip install Pygame y presionar Enter.
+5. Luego pip install cytolk y presionar Enter.
+6. Luego pip install synthizer y presionar Enter.
+7. Con esto ya están todos los requisitos instalados y ahora solo queda ejecutar el archivo 360.py en la carpeta donde se extrajo el rar.
+8. El archivo 360.py abrirá un menú de inicio con tres opciones.: Explore, Map Editor y Map Creator.
+9. Para esta prueba solo es necesario darle a Explore. Las otras opciones no están aún terminadas.
+10. Estos son las teclas que mueven al objeto Player por el mapa:
+11. E para activar o desactivar el sensor que funciona similar al sensor de Swamps FPS.
+12. W para avanzar.
+S para retroceder.
+A para girar 45 grados a la izquierda.
+D para girar 45 grados a la derecha.
+Si se mantiene presionada la tecla Shift junto con A o D, girarás 180 grados en lugar de 45 grados.
