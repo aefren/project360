@@ -80,7 +80,7 @@ class Player:
         self._countdown = 0
         self.generator = None
         self.lnstep = 0.06
-        self.sensor_timers = [0, 0, 0, 0, 0,]
+        self.sensor_timers = [0, 0, 0, 0, 0]
         self.foot = [
             ]
         self.passable_floor = ["Grass", "Sand"]
@@ -387,12 +387,13 @@ class Main:
         
         # Other initial settings.
         self.locations = []
+        self.macro_mode = 0
         self.sounds = []
         self.sensor = 0
         self.world = None
     def _walk(self):
         self.world.add_player(
-            degrees=90, name="player1", position=[370.74, 61.05, 0])
+            degrees=0, name="player1", position=[378.6, 64.5, 0])
         self.player = self.world.players[0]
         self.wmap = self.world.map
         position = self.player.position
@@ -425,6 +426,7 @@ class Main:
         self.xrange = 0
         self.yrange = 0
         self.tiles = []
+        self.positions = []
         self.set_map_move()
         tolk.output(f"Editor.",1)
         while  True:
@@ -695,33 +697,27 @@ class Main:
             items = ["Add", "Remove"]
             selected = self.get_options(items)
             if selected == None: return
-            xrange = self.get_xrange_dec(self.xrange, 0.10001)
-            yrange = self.get_yrange_dec(self.yrange, 0.10001)
-            self.select_tiles(yrange, xrange)
-            for tile in self.tiles:
-                for y in yrange:
-                    print(f"yrange {y}.")
-                    if int(y) > tile.y:
-                        print(f"Fin {y}.")
-                        break
-                    for x in xrange:
-                        print(f"xrange {x}.")
-                        print(f"tile {tile.y}, {tile.x}.")
-                        if int(x) > tile.x:
-                            print(f"Diferencia {y, x}.")
-                            break
-                        if int(x) != tile.x or int(y) != tile.y: continue
-                        if hasattr(tile, "floor") == False: continue
-                        if selected == "Add":
-                            if (y, x) not in tile.blocked:
-                                print(f"Added {y, x}.") 
-                                tile.blocked += [(y, x)]
-                        elif selected == "Remove":
-                            if (y, x) in tile.blocked: 
-                                tile.blocked.remove((y, x))
-                                
+            if self.positions == []: return
+            for it in self.positions:
+                tile = self.wmap[int(it[0])][int(it[1])]
+                print(f"tile {tile.y}, {tile.x}.")
+                if hasattr(tile, "floor") == False: continue
+                if selected == "Add":
+                    if it not in tile.blocked:
+                        print(f"Added {it}.") 
+                        tile.blocked += [it]
+                elif selected == "Remove":
+                    if it in tile.blocked: 
+                        tile.blocked.remove(it)
         if event.key == pygame.K_c:
             pass
+        if event.key == pygame.K_m:
+            if self.macro_mode:
+                self.macro_mode = 0
+                tolk.output(f"Macro Off",1)
+            elif self.macro_mode == 0:
+                self.macro_mode = 1
+                tolk.output(f"Macro On",1)
         if event.key == pygame.K_n:
             name = self.set_attr(attrtype="str")
             if name: self.pos.name = name
@@ -766,12 +762,14 @@ class Main:
             tolk.output(f"Ranges reseted.")
         if event.key == pygame.K_BACKSPACE:
             self.tiles = []
+            self.positions = []
             tolk.output(f"Cleaned.", 1)
         if event.key == pygame.K_SPACE:
             tolk.silence()
-            xrange = self.get_xrange(self.xrange, 1)
-            yrange = self.get_yrange(self.yrange,1)
-            self.select_tiles(yrange, xrange)
+            if self.macro_mode:
+                self.select_square()
+            else:
+                self.select_tile()
     def keys_global(self, event):
         if event.key == pygame.K_e:
             if self.sensor == 0:
@@ -914,7 +912,8 @@ class Main:
             if hasattr(self.pos, "ambient"): tolk.output(f"Ambient sounds.")
             if hasattr(self.pos, "jname"): tolk.output(f"{self.pos.jname}.")
         else: tolk.output(f"y {self.pos.y}, x {self.pos.x}.",1)
-        if self.pos in self.tiles: tolk.output(f"Selected.")
+        if self.macro_mode and self.pos in self.tiles: 
+            tolk.output(f"Selected.")
     def move_editor(self, unit, degrees, lnstep=None):
         x = unit.position[1]
         y = unit.position[0]
@@ -953,12 +952,12 @@ class Main:
             if hasattr(destination, "floor") == False:
                 tolk.output(f"Can not move there.")
                 return
-            ypos = str(y)
+            '''ypos = str(y)
             xpos = str(x)
             if "." in ypos: ypos = ypos[:ypos.rfind(".")+2]
             if "." in xpos: xpos = xpos[:xpos.rfind(".")+2]
             ypos = float(ypos)
-            xpos = float(xpos)
+            xpos = float(xpos)'''
             print(f"Future pos {ypos, xpos}.")
             if (ypos, xpos) in destination.blocked:
                 tolk.output(f"Can not move there.")
@@ -1014,7 +1013,9 @@ class Main:
         tolk.output(f"map saved.",1)
         time.sleep(1)
 
-    def select_tiles(self, yrng, xrng):
+    def select_square(self):
+        xrng = self.get_xrange(self.xrange, 1)
+        yrng = self.get_yrange(self.yrange,1)
         yrng = [int(it) for it in yrng]
         xrng = [int(it) for it in xrng]
         yrange = []
@@ -1036,6 +1037,16 @@ class Main:
                 self.tiles += [x]
         tolk.output(f"{len(self.tiles)}tiles selected.")
         return
+    def select_tile(self):
+        yrange = self.get_yrange_dec(self.yrange, 0.10001)
+        xrange = self.get_xrange_dec(self.xrange, 0.10001)
+        positions = []
+        for y in yrange:
+            for x in xrange:
+                positions += [(y, x)]
+        
+        tolk.output(f"{len(positions)} positions selected.",1)
+        self.positions += positions
     def selector(self, item, x, go='', wrap=0):
         tolk.silence()
         if len(item) == 0:
@@ -1062,9 +1073,9 @@ class Main:
                 return x
     def sensor_event(self,):
         ldegrees = [self.player.degrees - 90]
-        ldegrees += [self.player.degrees -60]
+        ldegrees += [self.player.degrees -45]
         ldegrees += [self.player.degrees]
-        ldegrees += [self.player.degrees + 60]
+        ldegrees += [self.player.degrees + 45]
         ldegrees += [self.player.degrees + 90]
         #ldegrees = [self.player.degrees]
         for r in range(len(ldegrees)):
@@ -1073,7 +1084,8 @@ class Main:
             if ldegrees[r] > 360: ldegrees[r] -= 360
         # sonar.
         print(f"{ldegrees=:}.")
-        cdt_value = 200
+        distance = 11
+        cdt_value = 150
         idx = -1
         for it in ldegrees:
             idx += 1
@@ -1083,14 +1095,14 @@ class Main:
             print(f"ctime {self.ctime}, and {self.player.sensor_timers[idx]}")
             x, y = self.player.position[1], self.player.position[0]
             z = 0
-            ctimer = cdt_value * (len(ldegrees) + 1)
-            vol = 2
+            ctimer = cdt_value * (len(ldegrees) + 2)
+            vol = 1
             self.player.sensor_timers[idx] = self.ctime + ctimer
             if idx < len(ldegrees) - 1:
                 ctimer = self.ctime + cdt_value
                 self.player.sensor_timers[idx+1] = ctimer
-            for r in range(20):
-                vol -= 0.1
+            for r in range(distance):
+                vol -= vol*0.2
                 if vol < 0: vol = 0.1
                 radians = self.get_radians(it)
                 radians[0] *= self.player.lnstep
@@ -1119,7 +1131,7 @@ class Main:
                     self.player.generator = gen
                     self.player.source = src
                     break
-                elif can_pass and r == 19:
+                elif can_pass and r == distance - 1:
                     sound = "sensor01"
                     self.player.clean()
                     bf, gen, src = self.add_source3d(
@@ -1201,6 +1213,8 @@ class Main:
     def set_map_move(self):
         self.y, self.x = self.player.position[0], self.player.position[1]
         self.y, self.x = int(self.y), int(self.x)
+        if self.macro_mode == 0 and self.player.position[:2] in self.positions:
+            tolk.output(f"Position Selected.")
         locations = self.get_location()
         old_pos = self.pos
         self.pos = self.world.map[int(self.y)][int(self.x)]
