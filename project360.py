@@ -117,7 +117,7 @@ class Player:
         y = float(y)
         tolk.output(f"y {y}, x {x}.",1)
     def say_location(self):
-        locations = main.get_location()
+        locations = main.get_location(self.position)
         if locations:
             for it in locations:
                 tolk.output(f"{it}")
@@ -979,9 +979,9 @@ class Main:
             if distance <= self.ctx.default_distance_max.value + 1: continue
             src.clean()
             
-    def get_location(self):
+    def get_location(self, position):
         msg = []
-        y, x = self.player.position[0], self.player.position[1]
+        y, x = position[:2]
         ypos = str(y)
         xpos = str(x)
         if "." in ypos: ypos = ypos[:ypos.rfind(".")+2]
@@ -991,7 +991,7 @@ class Main:
         
         for lc in self.world.locations:
             if (ypos, xpos) in lc.locations:
-                msg += [f"{lc.name} "]
+                msg += [f"{lc.name}"]
         
         return msg 
     def save_map(self):
@@ -1215,7 +1215,7 @@ class Main:
         self.y, self.x = int(self.y), int(self.x)
         if self.macro_mode == 0 and self.player.position[:2] in self.positions:
             tolk.output(f"Position Selected.")
-        locations = self.get_location()
+        locations = self.get_location(self.player.position)
         old_pos = self.pos
         self.pos = self.world.map[int(self.y)][int(self.x)]
         if hasattr(self.pos, "floor"):
@@ -1341,6 +1341,10 @@ class Main:
                     tolk.output(f"No jump points.")
                     continue
                 tolk.output(f"{events[x].name}.")
+                location = self.get_location(events[x].position)
+                if location: 
+                    for it in location:
+                        if events[x].name != it: tolk.output(f"{it}.")
                 tolk.output(f"at {events[x].position}.")
             for event in pygame.event.get():
                     if event.type == pygame.KEYDOWN:
