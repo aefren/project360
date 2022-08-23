@@ -464,20 +464,13 @@ class Main:
         self.world.jumppoints += [jumppoint]
     
     def add_location_event(self):
-        tolk.output(f"Not yet created.",1)
-        yrange = self.get_yrange_dec(self.yrange, 0.10001)
-        xrange = self.get_xrange_dec(self.xrange, 0.10001)
         name = self.set_attr("str")
         if name == None: return
         location = EmptyClass()
         self.world.locations += [location]
         location.name = name
         location.position = self.player.position
-        location.locations = []
-        for y in yrange:
-            for x in xrange:
-                location.locations += [(y, x)]
-    
+        location.locations += [self.positions]
     def add_source3d(
             self, sound, gain=None, loop=0, linger=None, position=(), z=0,
             ds_ref=None, ds_max=None, pitch=None, rolloff=None):
@@ -764,7 +757,13 @@ class Main:
             self.tiles = []
             self.positions = []
             tolk.output(f"Cleaned.", 1)
-        if event.key == pygame.K_SPACE:
+        if event.key == pygame.K_SPACE and self.ctrl:
+            tolk.silence()
+            if self.macro_mode:
+                self.select_square(remove=1)
+            else:
+                self.select_tile(remove=1)
+        elif event.key == pygame.K_SPACE:
             tolk.silence()
             if self.macro_mode:
                 self.select_square()
@@ -1013,7 +1012,7 @@ class Main:
         tolk.output(f"map saved.",1)
         time.sleep(1)
 
-    def select_square(self):
+    def select_square(self, remove=0):
         xrng = self.get_xrange(self.xrange, 1)
         yrng = self.get_yrange(self.yrange,1)
         yrng = [int(it) for it in yrng]
@@ -1032,21 +1031,27 @@ class Main:
             idx = xrange[0] -1
             for x in y[xrange[0]:xrange[-1]+1]:
                 idx += 1
-                if x in self.tiles: continue
                 if idx not in xrange: continue
-                self.tiles += [x]
+                if remove == 0:
+                    if x in self.tiles: continue
+                    self.tiles += [x]
+                else:
+                    if x in self.tiles: self.tiles.remove(x)
         tolk.output(f"{len(self.tiles)}tiles selected.")
         return
-    def select_tile(self):
+    def select_tile(self, remove=0):
         yrange = self.get_yrange_dec(self.yrange, 0.10001)
         xrange = self.get_xrange_dec(self.xrange, 0.10001)
-        positions = []
         for y in yrange:
             for x in xrange:
-                positions += [(y, x)]
+                if remove:
+                    if (y, x) in self.positions: 
+                        self.positions.remove((y, x))
+                if remove == 0:
+                    if (y, x) not in self.positions: 
+                        self.positions += [(y, x)]
         
-        tolk.output(f"{len(positions)} positions selected.",1)
-        self.positions += positions
+        tolk.output(f"{len(self.positions)} positions selected.",1)
     def selector(self, item, x, go='', wrap=0):
         tolk.silence()
         if len(item) == 0:
@@ -1348,6 +1353,10 @@ class Main:
                 tolk.output(f"at {events[x].position}.")
             for event in pygame.event.get():
                     if event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_a:
+                            events[x].locations += self.positions
+                            plus = len(self.positions)
+                            tolk.output(f"{plus} Positions Added.")
                         if event.key == pygame.K_UP:
                             x = self.selector(events, x, go="up")
                             say = 1
