@@ -9,7 +9,6 @@ import pygame
 import sys
 import natsort
 import synthizer as syn
-#import sys
 import time
 
 from cytolk import tolk
@@ -38,19 +37,20 @@ class SoundEvent:
         self.source = None
         
         self.distance_ref = 1
-        self.distance_max = 1
+        self.distance_max = 10
         self.gain = 1
-        self.loop = 1
+        self.loop = 0
         self.pitch_bend = 1
+        self.ratio = 0
         self.rolloff = 1
     def add_sound(self):
         sound = main.get_sound(path=soundpath, filext="/*.wav")
         self.sounds += [sound]
     def check_complete(self):
-        tile = self.tile
-        position = tile.generator.playback_position.value
-        length = tile.buffer.get_size_in_length()
-        if length == position:
+        if self.source == None: return
+        position = self.generator.playback_position.value
+        length = self.buffer.get_length_in_seconds()
+        if position >= length:
             self.clean() 
     def clean(self):
         if self.source:
@@ -61,12 +61,13 @@ class SoundEvent:
             del(self.generator)
             del(self.buffer)
     def update(self):
+        self.check_complete()
         if self.source:
             self.generator.looping.value = self.loop
             self.generator.pitch_bend.value = self.pitch_bend
             
             self.source.gain.value = self.gain
-            self.source.position.value = self.position
+            self.source.position.value = self._position
             self.source.distance_ref.value = self.distance_ref
             self.source.distance_max.value = self.distance_max
             self.source.rolloff.value = self.rolloff
@@ -383,7 +384,7 @@ class Main:
         syn.initialize()
         self.ctx = syn.Context()
         self.ctx.default_panner_strategy.value = syn.PannerStrategy.HRTF
-        self.ctx.default_distance_max.value = 20
+        self.ctx.default_distance_max.value = 10
         
         # Other initial settings.
         self.locations = []
@@ -430,7 +431,7 @@ class Main:
         self.set_map_move()
         tolk.output(f"Editor.",1)
         while  True:
-            pygame.time.Clock().tick(30)
+            pygame.time.Clock().tick(60)
             self.update()
             self.get_pressed_keys()
             for event in pygame.event.get():
@@ -470,10 +471,10 @@ class Main:
         self.world.locations += [location]
         location.name = name
         location.position = self.player.position
-        location.locations += [self.positions]
+        location.locations = self.positions
     def add_source3d(
             self, sound, gain=None, loop=0, linger=None, position=(), z=0,
-            ds_ref=None, ds_max=None, pitch=None, rolloff=None):
+            ds_ref=None, ds_max=None, pitch=None, rolloff=None, play=1):
         print(f"New Buffer {sound}.")
         buffer = None
         if ".wav" not in sound: sound += ".wav"
@@ -496,7 +497,7 @@ class Main:
         if linger: 
             generator.config_delete_behavior(linger=True)
             source.config_delete_behavior(linger=True)
-        source.add_generator(generator)
+        if play: source.add_generator(generator)
         return buffer, generator, source
     def add_sound_event(self):
         name = self.set_attr(attrtype="str")
@@ -504,6 +505,7 @@ class Main:
         source = SoundEvent(self.player.position)
         source.name = name
         self.world.sources += [source]
+        main.view_sound_events(-1)
     def get_distance(self, source, current):
         distx = abs(source[0] - current[0])
         disty = abs(source[1] - current[1])
@@ -549,6 +551,7 @@ class Main:
         self.shift = self.key_pressed[pygame.K_LSHIFT]
         self.shift += self.key_pressed[pygame.K_RSHIFT]
     def get_sound(self, path=soundpath, filext=".wav", islist=0):
+        src = None
         say = 1
         x = 0
         if islist == 0:
@@ -567,6 +570,16 @@ class Main:
                 else: tolk.output(f"No sounds.")
             for event in pygame.event.get():
                     if event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_SPACE:
+                            if src == None:
+                                buffer, generator, src = main.add_source3d(
+                                    sound, linger=1, 
+                                    position=self.player.position, ds_ref=1,)
+                            elif src:
+                                src.remove_generator(generator)
+                                src.dec_ref()
+                                generator.dec_ref()
+                                src = None
                         if event.key == pygame.K_UP:
                             x = self.selector(sounds, x, go="up")
                             say = 1
@@ -589,6 +602,10 @@ class Main:
                             say = 1
                         if event.key == pygame.K_RETURN:
                             tolk.silence()
+                            if src:
+                                src.remove_generator(generator)
+                                src.dec_ref()
+                                generator.dec_ref()
                             if sounds:return sound
                             else: return None
                         if event.key == pygame.K_F12:
@@ -597,6 +614,10 @@ class Main:
                             tolk.output(f"Debug Off.",1)
                         if event.key == pygame.K_ESCAPE:
                             tolk.silence()
+                            if src:
+                                src.remove_generator(generator)
+                                src.dec_ref()
+                                generator.dec_ref()
                             return 
     def get_radians(self, degrees):
         r = math.radians(degrees)
@@ -657,18 +678,27 @@ class Main:
             if distance < self.ctx.default_distance_max.value:
                 print(f"Adding sound in {it.position}.")
                 sound = choice(it.sounds)
+                it._position = list(it.position)
+                if hasattr(it, "ratio") == False: it.ratio = 0
+                if it.ratio:
+                    it._position[0]= uniform(it._position[0]- it.ratio, 
+                                         it._position[0] + it.ratio)
+                    it._position[1]= uniform(it._position[1]- it.ratio, 
+                                         it._position[1] + it.ratio)
                 bf, gen, src = self.add_source3d(
-                    sound, position=it.position, linger=1)
+                    sound, position=it._position, linger=1, play=0)
                 it.buffer = bf
                 it.generator = gen
                 it.source = src
+                it.sound_name = sound
                 
                 it.generator.looping.value = it.loop
                 
                 it.source.distance_ref.value = it.distance_ref
                 it.source.gain.value = it.gain
                 it.source.rolloff.value = it.rolloff
-    
+                
+                it.source.add_generator(it.generator)
     def keys_edit_tile(self, event):
         if event.key == pygame.K_F3:
             tolk.output(f"View.",1)
@@ -1383,14 +1413,13 @@ class Main:
                             tolk.output(f"Debug Off.")
                         if event.key == pygame.K_ESCAPE:
                             return tolk.silence()
-    def view_sound_events(self):
+    def view_sound_events(self, x=0):
         events = self.world.sources
         say = 1
-        x = 0
         y = 0
         while True:
             pygame.time.Clock().tick(30)
-            
+            self.update()            
             if say:
                 if x  >= len(events): x -= 1
                 say = 0
@@ -1398,10 +1427,10 @@ class Main:
                     tolk.output(f"No sound events.")
                     continue
                 
-                self.update()
                 it = events[x]
                 params = [
                     [f"Name", it, "name"],
+                    [f"Sounds", len(it.sounds)],
                     [f"Position", it, "position"],
                     [f"position y", it, "y"],
                     [f"position x", it, "x"],
@@ -1409,14 +1438,18 @@ class Main:
                     [f"Gain", it, "gain"],
                     [f"distance max", it, "distance_max"],
                     [f"distance ref", it, "distance_ref"],
+                    [f"Ratio", it, "ratio" ],
                     [f"RollOff", it, "rolloff" ],
                     [f"Loop", it, "loop"],
                     ["Pitch bend", it, "pitch_bend"],
                     ]
                 it.position = it.y, it.x, it.z
                 it.update()
-                tolk.output(f"{params[y][0]} \
-                {getattr(params[y][1], params[y][2])}.")
+                tolk.output(f"{params[y][0]} ")
+                if len(params[y]) == 3:
+                    tolk.output(f"{getattr(params[y][1], params[y][2])}.")
+                elif len(params[y]) == 2:
+                    tolk.output(f"{params[y][1]}.")
             for event in pygame.event.get():
                     if event.type == pygame.KEYDOWN:
                         if event.key == pygame.K_a:
@@ -1424,6 +1457,12 @@ class Main:
                         if event.key == pygame.K_n:
                             name = self.set_attr(attrtype="str")
                             if name: it.name = name
+                        if event.key == pygame.K_s:
+                            sound = main.get_sound(events[x].sounds, 
+                                                        islist=1)
+                            if sound:
+                                events[x].sounds.remove(sound)
+                                if it.sound_name == sound: it.clean()
                         if event.key == pygame.K_u:
                             attr = getattr(params[y][1], params[y][2])
                             if isinstance(attr, str) == False:
@@ -1487,12 +1526,12 @@ class Main:
                             return tolk.silence()
     def update(self):
         self.ctime = pygame.time.get_ticks()
-        self.world.update()
         self.init_source3d()
-        self.remove_source3d()
         self.player.update()
         self.set_orientation()
         self.ctx.position.value = self.player.position
+        self.world.update()
+        self.remove_source3d()
 
 
 
