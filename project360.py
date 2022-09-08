@@ -11,6 +11,7 @@ import natsort
 import synthizer as syn
 import time
 
+from collections import deque
 from cytolk import tolk
 from glob import glob
 from pdb import Pdb
@@ -26,6 +27,84 @@ soundpath = os.getcwd() + str('/data/sounds/')
 class EmptyClass:
     def __init__(self):
         pass
+
+
+class Floor:
+    def __init__(self):
+        pass
+    def set_to_concrete(self):
+        self.name = "Concrete"
+        self.sounds = [
+            "ft-concrete01",
+            "ft-concrete02",
+            "ft-concrete03",
+            "ft-concrete04",
+            "ft-concrete05",
+            ]
+        
+    def set_to_grass(self):
+        self.name = "Grass"
+        self.sounds = [
+            "ft-grass01",
+            "ft-grass02",
+            "ft-grass03",
+            "ft-grass04",
+            "ft-grass05",
+            ]
+    def set_to_forest(self):
+        self.name = "Forest"
+        self.sounds = [
+            "ft-forest01",
+            "ft-forest02",
+            "ft-forest03",
+            "ft-forest04",
+            "ft-forest05",
+            "ft-forest06",
+            "ft-forest07",
+            ]
+    def set_to_rustwood(self):
+        self.name = "Rust Wood"
+        self.sounds = [
+            "ft-rustwood01",
+            "ft-rustwood02",
+            "ft-rustwood03",
+            "ft-rustwood04",
+            "ft-rustwood05",
+            "ft-rustwood06",
+            "ft-rustwood07",
+            ]
+    def set_to_sand(self):
+        self.name = "Sand"
+        self.sounds = [
+            "ft-sand01",
+            "ft-sand02",
+            "ft-sand03",
+            "ft-sand04",
+            "ft-sand05",
+            ]
+    def set_to_water(self):
+        self.name = "Water"
+        self.sounds = [
+            "ft-water01",
+            "ft-water02",
+            "ft-water03",
+            "ft-water04",
+            "ft-water05",
+            "ft-water06",
+            "ft-water07",
+            "ft-water08",
+            "ft-water09",
+            ]
+    def set_to_wood(self):
+        self.name = "Wood"
+        self.sounds = [
+            "ft-wood01",
+            "ft-wood02",
+            "ft-wood03",
+            "ft-wood04",
+            "ft-wood05",
+            ]
+
 
 class SoundEvent:
     def __init__(self, position):
@@ -77,10 +156,15 @@ class Player:
     def __init__(self):
         self.name = ""
         self.editor = 0
-        self.countdown = 500
-        self._countdown = 0
         self.generator = None
-        self.lnstep = 0.06
+        
+        self.running = 0
+        self.walk_countdown = 500
+        self.run_countdown_factor = 0.7
+        self._countdown = 0
+        self.step_length = 0.06
+        self.run_step_factor = 2
+        self.locations = []
         self.sensor_timers = [0, 0, 0, 0, 0]
         self.foot = [
             ]
@@ -106,7 +190,11 @@ class Player:
             self.generator.dec_ref()
             self.generator = None
     def check_location(self):
-        pass
+        locations = main.get_location(self.position)
+        if locations != self.locations:
+            for it in locations:
+                if it not in self.locations: tolk.output(f"{it}")
+            self.locations = locations 
     def say_degrees(self):
         tolk.output(f"{self.degrees}.",1)
     def say_cdt(self):
@@ -124,13 +212,22 @@ class Player:
                 tolk.output(f"{it}")
     def set_editor(self):
         self.editor = 1
-        self.countdown = 0
+        self.walk_countdown = 0
     def set_name(self, name):
         self.name = name
     def set_degrees(self, degrees):
+        if degrees < 0: degrees += 360
+        elif degrees > 360: degrees -= 360
         self.degrees = degrees
     def set_position(self, position=[]):
         self.position = position
+    def set_run(self):
+        if self.running == 0:
+            self.running = 1
+            tolk.output(f"Running On.",1)
+        elif self.running:
+            self.running = 0
+            tolk.output(f"Running Off.",1)
     def update(self):
         self.ctime = main.ctime
 
@@ -162,7 +259,8 @@ class World:
     def new_world(self, info=0):        
         inicio = pygame.time.get_ticks()
         tolk.output(f"creating world.", 1)
-        self.name = "map1"
+        self.name = main.set_attr(attrtype="str")
+        if self.name == None: return
         self.ext = ".map"
         self.width = 612
         self.length = 612
@@ -210,29 +308,8 @@ tiledict = dict(
 
 
 class Tile:
-    #===========================================================================
-    # __slots__ = [
-    #     "name", 
-    #     "type",
-    #     "generator",
-    #     "source",
-    #     "events",
-    #     "items",
-    #     "ambients",
-    #     "x",
-    #     "y",
-    #     ]
-    #===========================================================================
     def __init__(self):
-        pass
-        #self.type = "Sand"
-        #self.blocked = 0
-        #self.items = []
-        #self.jname = None
-        #self.map = None
-        #self.set_to_grass()
-        #self.sonar = None
-        #self.source = None
+        self.floors = []
     
     def get_type(self):
         say = 1
@@ -268,12 +345,17 @@ class Tile:
                         return types[x]
                     if event.key == pygame.K_ESCAPE:
                         return
+    def hasfloor(self, position):
+        if hasattr(self, "floors") == False: return
+        for fl in self.floors:
+            if fl.position == position: return True
     def restart_attr(self):
         if self.floor == "Grass": self.set_to_grass()
         elif self.floor == "Sand": self.set_to_sand()
         elif self.floor == "wall": self.set_to_concrete()
     def set_basic(self):
         if hasattr(self, "blocked") == False: self.blocked = []
+    
     def set_to_concrete(self):
         self.set_basic()
         self.floor = "Concrete"
@@ -358,17 +440,31 @@ class Tile:
             "ft-wood05",
             "ft-wood06"
             ]
-    def set_tiletype(self, value):
-        if value == "Grass": self.set_to_grass()
-        if value == "Forest": self.set_to_forest()
-        if value == "None": self.set_to_none()
-        if value == "Concrete": self.set_to_concrete() 
-        if value == "Rust Wood": self.set_to_rustwood()
-        if value == "Sand": self.set_to_sand()
-        if value == "Water": self.set_to_water()
-        if value == "Wood": self.set_to_wood()
+    def set_floor(self, floor_type):
+        y = self.y
+        x = self.x
+        self.positions = []
+        for r in range(10):
+            x = self.x
+            for i in range(10):
+                floor = Floor()
+                if floor_type == "Concrete": floor.set_to_concrete()
+                if floor_type == "Grass": floor.set_to_grass()
+                if floor_type == "Forest": floor.set_to_forest()
+                if floor_type == "Sand": floor.set_to_sand()
+                if floor_type == "Rust Wood": floor.set_to_rustwood()
+                if floor_type == "Water": floor.set_to_water()
+                if floor_type == "Wood": floor.set_to_wood()
+                floor.position = (y, x)
+                self.floors += [floor]
+                x = round(x + 0.1, 1)
+                if i == 9: y = round(y + 0.1, 1)
     def say_floor(self):
-        if hasattr(self, "floor"): tolk.output(f"{self.floor}.")
+        if hasattr(self, "floors") == False: return
+        position = main.player.position
+        for fl in self.floors:
+            if (position[0], position[1]) == fl.position:
+                tolk.output(f"{fl.name}.")
     def update(self):
         pass
 
@@ -377,7 +473,7 @@ class Main:
     def __init__(self, size=[1024, 768]):
         # Pygame initial settings.
         pygame.init()
-        pygame.display.set_mode(size)
+        pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
         pygame.display.set_caption("Project360")
         
         # Synthizer initial settings
@@ -388,26 +484,31 @@ class Main:
         
         # Other initial settings.
         self.locations = []
-        self.macro_mode = 0
+        self.macro_mode = 1
+        self._mouse_timer = 0
+        self.mouse_timer = 200
+        self.mouse_max_speed = 90
         self.sounds = []
         self.sensor = 0
         self.world = None
     def _walk(self):
         self.world.add_player(
-            degrees=0, name="player1", position=[378.6, 64.5, 0])
+            degrees=0, name="player1", position=[370, 60, 0])
         self.player = self.world.players[0]
         self.wmap = self.world.map
         position = self.player.position
         self.pos = self.wmap[int(position[0])][int(position[1])]
         tolk.output(f"Explorer.",1)
+        self.center_mouse()
         while True:
-            pygame.time.Clock().tick(60)
+            pygame.time.Clock().tick(30)
             self.update()
             self.player.update()
             self.get_pressed_keys()
             if self.sensor: self.sensor_event()
             self.keys_object_movement()
             for event in pygame.event.get():
+                self.mouse_input(event)
                 if event.type == pygame.KEYDOWN:
                     self.keys_set_degree(event)
                     self.keys_global(event)
@@ -427,7 +528,7 @@ class Main:
         self.xrange = 0
         self.yrange = 0
         self.tiles = []
-        self.positions = []
+        self.positions = deque([], 30000)
         self.set_map_move()
         tolk.output(f"Editor.",1)
         while  True:
@@ -474,8 +575,9 @@ class Main:
         location.locations = self.positions
     def add_source3d(
             self, sound, gain=None, loop=0, linger=None, position=(), z=0,
-            ds_ref=None, ds_max=None, pitch=None, rolloff=None, play=1):
-        print(f"New Buffer {sound}.")
+            ds_ref=None, ds_max=None, pitch=None, rolloff=None, play=1, 
+            info=0):
+        if info: print(f"New Buffer {sound}.")
         buffer = None
         if ".wav" not in sound: sound += ".wav"
         for sn in self.sounds:
@@ -506,6 +608,10 @@ class Main:
         source.name = name
         self.world.sources += [source]
         main.view_sound_events(-1)
+    def center_mouse(self):
+        sizes = pygame.display.get_desktop_sizes()
+        self.screen_size = [sizes[0][0], sizes[0][1]]
+        pygame.mouse.set_pos(self.screen_size[0]/2, self.screen_size[0]/2)
     def get_distance(self, source, current):
         distx = abs(source[0] - current[0])
         disty = abs(source[1] - current[1])
@@ -661,7 +767,7 @@ class Main:
         yrange = numpy.arange(min(yrange),  max(yrange) + dec, dec)
         yrange = [round(it,1) for it in yrange]
         return yrange
-    def get_yrange_dec(self, yrange, dec):
+    def get_yrange_dec(self, yrange, dec=0.10000):
         y = self.player.position[0]
         yrange = [y, y + yrange]
         yrange = numpy.arange(
@@ -670,13 +776,13 @@ class Main:
             dec)
         yrange = [round(it,1) for it in yrange]
         return yrange
-    def init_source3d(self):
+    def init_source3d(self, info=0):
         for it in self.world.sources:
             if it.sounds == []: continue
             if it.source: continue
             distance = self.get_distance(it.position, self.player.position)
             if distance < self.ctx.default_distance_max.value:
-                print(f"Adding sound in {it.position}.")
+                if info: print(f"Adding sound in {it.position}.")
                 sound = choice(it.sounds)
                 it._position = list(it.position)
                 if hasattr(it, "ratio") == False: it.ratio = 0
@@ -717,13 +823,13 @@ class Main:
             elif selected == "Location": self.add_location_event()
             if selected == "Sound Event": self.add_sound_event()
         if event.key == pygame.K_b:
+            if self.positions == []: return
             items = ["Add", "Remove"]
             selected = self.get_options(items)
             if selected == None: return
-            if self.positions == []: return
             for it in self.positions:
                 tile = self.wmap[int(it[0])][int(it[1])]
-                print(f"tile {tile.y}, {tile.x}.")
+                #print(f"tile {tile.y}, {tile.x}.")
                 if hasattr(tile, "floor") == False: continue
                 if selected == "Add":
                     if it not in tile.blocked:
@@ -734,6 +840,12 @@ class Main:
                         tile.blocked.remove(it)
         if event.key == pygame.K_c:
             pass
+        if event.key == pygame.K_f:
+            if not self.positions: return
+            selected = self.select_floor()            
+            if selected == None: return
+            self.set_floor(selected)
+            
         if event.key == pygame.K_m:
             if self.macro_mode:
                 self.macro_mode = 0
@@ -752,11 +864,12 @@ class Main:
         if event.key == pygame.K_s:
             tolk.output(f"{len(self.tiles)} tiles selected.")
         if event.key == pygame.K_t:
-            if len(self.tiles) == 0:
+            if not self.tiles:
                 tolk.output(f"No tiles selected.")
                 return
-            tiletype = self.pos.get_type()
-            [it.set_tiletype(tiletype) for it in self.tiles]
+            selected = self.select_floor()
+            if not selected: return
+            [it.set_floor (selected) for it in self.tiles]
         if event.key == pygame.K_x:
             self.player.say_cdt()
         if event.key == pygame.K_PAGEUP:
@@ -807,6 +920,8 @@ class Main:
             elif self.sensor:
                 self.sensor = 0
                 tolk.output(f"Sensor Off.")
+        if event.key == pygame.K_r:
+            self.player.set_run()
         if event.key == pygame.K_v:
             self.player.say_location()
         if event.key == pygame.K_x:
@@ -835,31 +950,34 @@ class Main:
             self.set_map_move()
     def keys_object_movement(self):
         if self.key_pressed[pygame.K_w]:
-            self.Move_object(self.player)
+            output = self.Move_object(self.player)
+            if isinstance(output, str): tolk.output(output)
         if self.key_pressed[pygame.K_s]:
             self.Move_object(self.player, 1)
     def keys_set_degree(self, event):
         if self.player.editor:
             if event.key == pygame.K_LEFT and self.shift:
-                self.player.degrees -= 45
-                if self.player.degrees < 0: self.player.degrees += 360
+                degrees = self.player.degrees
+                degrees -= 45
+                self.player.set_degrees(degrees)
                 self.player.say_degrees()
             if event.key == pygame.K_RIGHT and self.shift:
-                self.player.degrees += 45
-                if self.player.degrees > 360: self.player.degrees -= 360
-                if self.player.degrees == 360: self.player.degrees = 0
+                degrees = self.player.degrees
+                degrees += 45
+                self.player.set_degrees(degrees)
                 self.player.say_degrees()
         if self.player.editor == 0:
-            if event.key == pygame.K_a: 
-                if self.shift: self.player.degrees -= 180
-                else: self.player.degrees -= 45
-                if self.player.degrees < 0: self.player.degrees += 360
+            if event.key == pygame.K_a:
+                degrees = self.player.degrees 
+                if self.shift: degrees -= 180
+                else: degrees -= 45
+                self.player.set_degrees(degrees)
                 self.player.say_degrees()
             if event.key == pygame.K_d:
-                if self.shift: self.player.degrees += 180
-                else: self.player.degrees += 45
-                if self.player.degrees > 360: self.player.degrees -= 360
-                if self.player.degrees == 360: self.player.degrees = 0
+                degrees = self.player.degrees
+                if self.shift: degrees += 180
+                else: degrees += 45
+                self.player.set_degrees(degrees)
                 self.player.say_degrees()
     def load_map(self, location, filext, saved=0):
         x = 0
@@ -943,11 +1061,25 @@ class Main:
         else: tolk.output(f"y {self.pos.y}, x {self.pos.x}.",1)
         if self.macro_mode and self.pos in self.tiles: 
             tolk.output(f"Selected.")
+    def mouse_input(self, event):
+        if event.type == pygame.MOUSEMOTION:
+            self.center_mouse()
+            if self._mouse_timer > self.ctime: return
+            move = event.rel[0]
+            if move < 0 and abs(move) > self.mouse_max_speed: 
+                move = -self.mouse_max_speed
+            if move > 0 and abs(move) > self.mouse_max_speed: 
+                move = self.mouse_max_speed
+            if move:
+                self.player.set_degrees(self.player.degrees + move)
+                self.player.say_degrees()
+                self._mouse_timer = self.ctime + self.mouse_timer
+        
     def move_editor(self, unit, degrees, lnstep=None):
         x = unit.position[1]
         y = unit.position[0]
         if degrees == None: degrees = unit.degrees
-        if lnstep == None: lnstep=unit.lnstep
+        if lnstep == None: lnstep=unit.step_length
         radians = self.get_radians(degrees)
         radians[0] *= lnstep
         radians[1] *= lnstep
@@ -955,17 +1087,25 @@ class Main:
         y = round(y + radians[1], 1)
         unit.position = y, x, 0
         destination = self.wmap[int(y)][int(x)]
-        if hasattr(destination, "floor") == False: return
-        if hasattr(destination, "foot_floor"):
-            sound = choice(destination.foot_floor)
-            unit.clean()
-            bf, gen, src = self.add_source3d(
-                sound, gain=1, loop=0, linger=1, position=unit.position)
-            unit.generator = gen
-            unit.source = src
-    def Move_object(self, unit, backward=0, degrees=None):
+        if hasattr(destination, "floors") == False: return
+        for fl in destination.floors:
+            if (y, x) == fl.position:
+                sound = choice(fl.sounds)
+                unit.clean()
+                bf, gen, src = self.add_source3d(
+                    sound, loop=0, linger=1, position=unit.position)
+                unit.generator = gen
+                unit.source = src
+    def Move_object(self, unit, backward=0, degrees=None, info=1):
         if unit.can_walk():
-            unit._countdown = self.ctime + unit.countdown
+            if unit.running == 0: 
+                unit._countdown = self.ctime + unit.walk_countdown
+                step = unit.step_length
+            if unit.running: 
+                _countdown = self.ctime
+                _countdown += unit.walk_countdown *unit.run_countdown_factor
+                unit._countdown = _countdown
+                step = unit.step_length * unit.run_step_factor 
             x = unit.position[1]
             y = unit.position[0]
             if degrees == None: degrees = unit.degrees
@@ -973,20 +1113,55 @@ class Main:
                 degrees += 180
                 if degrees > 360: degrees -= 361
             radians = self.get_radians(degrees)
-            radians[0] *= unit.lnstep
-            radians[1] *= unit.lnstep
+            radians[0] *= step
+            radians[1] *= step
+            x += radians[0]
+            y += radians[1]
+            destination = self.wmap[int(y)][int(x)]
+            ypos = str(y)
+            xpos = str(x)
+            print(f"{ypos, xpos}.")
+            if "." in ypos: ypos = ypos[:ypos.rfind(".")+2]
+            if "." in xpos: xpos = xpos[:xpos.rfind(".")+2]
+            ypos = float(ypos)
+            xpos = float(xpos)
+            if info: print(f"Future pos {ypos, xpos}.")
+            if destination.hasfloor((ypos, xpos)) == None: return f"No floor."
+            if (ypos, xpos) in destination.blocked: return f"Blocked."
+            unit.position = y, x, 0
+            for fl in destination.floors:
+                if (ypos, xpos) == fl.position:
+                    sound = choice(fl.sounds)
+                    unit.clean()
+                    bf, gen, src = self.add_source3d(
+                        sound, gain=1, loop=0, linger=1, position=unit.position)
+                    unit.generator = gen
+                    unit.source = src
+                    unit.check_location()
+    def _Move_object(self, unit, backward=0, degrees=None):
+        if unit.can_walk():
+            unit._countdown = self.ctime + unit.walk_countdown
+            x = unit.position[1]
+            y = unit.position[0]
+            if degrees == None: degrees = unit.degrees
+            if backward:
+                degrees += 180
+                if degrees > 360: degrees -= 361
+            radians = self.get_radians(degrees)
+            radians[0] *= unit.step_length
+            radians[1] *= unit.step_length
             x += radians[0]
             y += radians[1]
             destination = self.wmap[int(y)][int(x)]
             if hasattr(destination, "floor") == False:
                 tolk.output(f"Can not move there.")
                 return
-            '''ypos = str(y)
+            ypos = str(y)
             xpos = str(x)
             if "." in ypos: ypos = ypos[:ypos.rfind(".")+2]
             if "." in xpos: xpos = xpos[:xpos.rfind(".")+2]
             ypos = float(ypos)
-            xpos = float(xpos)'''
+            xpos = float(xpos)
             print(f"Future pos {ypos, xpos}.")
             if (ypos, xpos) in destination.blocked:
                 tolk.output(f"Can not move there.")
@@ -1042,6 +1217,12 @@ class Main:
         tolk.output(f"map saved.",1)
         time.sleep(1)
 
+    def select_floor(self):
+        items = [
+            "Concrete", "Grass", "Forest", 
+            "Rust Wood", "Sand", "Water", "Wood"]
+        selected = self.get_options(items)
+        return selected
     def select_square(self, remove=0):
         xrng = self.get_xrange(self.xrange, 1)
         yrng = self.get_yrange(self.yrange,1)
@@ -1075,10 +1256,10 @@ class Main:
         for y in yrange:
             for x in xrange:
                 if remove:
-                    if (y, x) in self.positions: 
+                    if (y, x) in self.positions:
                         self.positions.remove((y, x))
                 if remove == 0:
-                    if (y, x) not in self.positions: 
+                    if (y, x) not in self.positions:
                         self.positions += [(y, x)]
         
         tolk.output(f"{len(self.positions)} positions selected.",1)
@@ -1106,7 +1287,7 @@ class Main:
             else:
                 x += 1
                 return x
-    def sensor_event(self,):
+    def sensor_event(self, info=0):
         ldegrees = [self.player.degrees - 90]
         ldegrees += [self.player.degrees -45]
         ldegrees += [self.player.degrees]
@@ -1118,16 +1299,15 @@ class Main:
             if ldegrees[r] == 360: ldegrees[r] = 0
             if ldegrees[r] > 360: ldegrees[r] -= 360
         # sonar.
-        print(f"{ldegrees=:}.")
-        distance = 11
+        if info: print(f"{ldegrees=:}.")
+        distance = 21
         cdt_value = 150
         idx = -1
         for it in ldegrees:
             idx += 1
             if self.player.sensor_timers[idx] > self.ctime: 
                 continue
-            print(f"checking {it}.")
-            print(f"ctime {self.ctime}, and {self.player.sensor_timers[idx]}")
+            if info: print(f"checking {it}.")
             x, y = self.player.position[1], self.player.position[0]
             z = 0
             ctimer = cdt_value * (len(ldegrees) + 2)
@@ -1138,10 +1318,10 @@ class Main:
                 self.player.sensor_timers[idx+1] = ctimer
             for r in range(distance):
                 vol -= vol*0.2
-                if vol < 0: vol = 0.1
+                if vol < 0: vol = 0.05
                 radians = self.get_radians(it)
-                radians[0] *= self.player.lnstep
-                radians[1] *= self.player.lnstep
+                radians[0] *= self.player.step_length
+                radians[1] *= self.player.step_length
                 x += radians[0]
                 y += radians[1]
                 destination = self.wmap[int(y)][int(x)]
@@ -1151,7 +1331,7 @@ class Main:
                 if "." in xpos: xpos = xpos[:xpos.rfind(".")+2]
                 ypos = float(ypos)
                 xpos = float(xpos)
-                print(f"checking in {ypos, xpos}.")
+                if info: print(f"checking in {ypos, xpos}.")
                 can_pass = 1
                 if hasattr(destination, "floor") == False: can_pass = 0
                 elif (ypos, xpos) in destination.blocked: can_pass = 0
@@ -1245,6 +1425,23 @@ class Main:
                             if i < 0: i = 0
                     
     
+    def set_floor(self, floor_type):
+        for pos in self.positions:
+            square = self.wmap[int(pos[0])][int(pos[1])]
+            if hasattr(square, "floors") == False: square.floors = []
+            square.floors = [it for it in square.floors if pos != it.position]
+        for pos in self.positions:
+            square = self.wmap[int(pos[0])][int(pos[1])]
+            floor = Floor()
+            if floor_type == "Concrete": floor.set_to_concrete()
+            if floor_type == "Grass": floor.set_to_grass()
+            if floor_type == "Forest": floor.set_to_forest()
+            if floor_type == "Sand": floor.set_to_sand()
+            if floor_type == "Rust Wood": floor.set_to_rustwood()
+            if floor_type == "Water": floor.set_to_water()
+            if floor_type == "Wood": floor.set_to_wood()
+            floor.position = pos
+            square.floors += [floor]        
     def set_map_move(self):
         self.y, self.x = self.player.position[0], self.player.position[1]
         self.y, self.x = int(self.y), int(self.x)
@@ -1432,16 +1629,16 @@ class Main:
                     [f"Name", it, "name"],
                     [f"Sounds", len(it.sounds)],
                     [f"Position", it, "position"],
-                    [f"position y", it, "y"],
-                    [f"position x", it, "x"],
-                    [f"position z", it, "z"[0]],
+                    [f"X", it, "y"],
+                    [f"X", it, "x"],
+                    [f"Z", it, "z"[0]],
                     [f"Gain", it, "gain"],
                     [f"distance max", it, "distance_max"],
                     [f"distance ref", it, "distance_ref"],
-                    [f"Ratio", it, "ratio" ],
-                    [f"RollOff", it, "rolloff" ],
                     [f"Loop", it, "loop"],
                     ["Pitch bend", it, "pitch_bend"],
+                    [f"Ratio", it, "ratio" ],
+                    [f"RollOff", it, "rolloff" ],
                     ]
                 it.position = it.y, it.x, it.z
                 it.update()
@@ -1492,11 +1689,13 @@ class Main:
                         if event.key == pygame.K_LEFT:
                             x = self.selector(events, x, "up")
                             say = 1
-                            y = 0
+                            it = events[x]
+                            if y != 0: tolk.output(f"{it.name} ")
                         if event.key == pygame.K_RIGHT:
                             x = self.selector(events, x, "down")
                             say = 1
-                            y = 0
+                            it = events[x]
+                            if y != 0: tolk.output(f"{it.name} ")
                         if event.key == pygame.K_UP:
                             y = self.selector(params, y, "up")
                             say = 1
@@ -1506,8 +1705,18 @@ class Main:
                         if event.key == pygame.K_HOME:
                             x = 0
                             say = 1
+                            it = events[x]
+                            if y != 0: tolk.output(f"{it.name} ")
                         if event.key == pygame.K_END:
                             x = len(events) - 1
+                            say = 1
+                            it = events[x]
+                            if y != 0: tolk.output(f"{it.name} ")
+                        if event.key == pygame.K_PAGEUP:
+                            y = 0
+                            say = 1
+                        if event.key == pygame.K_PAGEDOWN:
+                            y = len(params) - 1
                             say = 1
                         if event.key == pygame.K_DELETE:
                             events[x].clean()
