@@ -162,7 +162,7 @@ class Player:
         self.walk_countdown = 500
         self.run_countdown_factor = 0.7
         self._countdown = 0
-        self.step_length = 0.06
+        self.step_length = 0.07
         self.run_step_factor = 2
         self.locations = []
         self.sensor_timers = [0, 0, 0, 0, 0]
@@ -612,6 +612,16 @@ class Main:
         sizes = pygame.display.get_desktop_sizes()
         self.screen_size = [sizes[0][0], sizes[0][1]]
         pygame.mouse.set_pos(self.screen_size[0]/2, self.screen_size[0]/2)
+    def fix_decimal(self, value, prec=1):
+        value = str(value)
+        dotindex = value.rfind(".")
+        if dotindex < 0: return float(value)
+        lng = len(value) - 1
+        dec_digits = abs(dotindex - lng)
+        if dec_digits > prec:
+            value = value[:(dotindex+1)+prec]
+        return float(value)
+            
     def get_distance(self, source, current):
         distx = abs(source[0] - current[0])
         disty = abs(source[1] - current[1])
@@ -729,7 +739,7 @@ class Main:
         r = math.radians(degrees)
         sin = math.sin(r)
         cos = math.cos(r)
-        return  [round(sin, 3), round(cos, 3)]
+        return  [round(sin, 4), round(cos, 4)]
     
     
     def get_xrange(self, xrange, dec, extra=0):
@@ -1097,6 +1107,66 @@ class Main:
                 unit.generator = gen
                 unit.source = src
     def Move_object(self, unit, backward=0, degrees=None, info=1):
+        if not unit.can_walk(): return
+        if unit.running == 0: 
+            unit._countdown = self.ctime + unit.walk_countdown
+            step = unit.step_length
+        if unit.running: 
+            _countdown = self.ctime
+            _countdown += unit.walk_countdown *unit.run_countdown_factor
+            unit._countdown = _countdown
+            step = unit.step_length * unit.run_step_factor 
+        
+        y = unit.position[0]
+        x = unit.position[1]
+        if degrees == None: degrees = unit.degrees
+        if backward:
+            degrees += 180
+            if degrees > 360: degrees -= 361
+        radians = self.get_radians(degrees)
+        radians[0] *= step
+        radians[1] *= step
+        endy = self.fix_decimal(y + radians[1], prec=2)
+        endx = self.fix_decimal(x + radians[0], prec=2)
+        print(f"destination: {endy, endx}.")
+        print(f"radians0 {radians[0]}, radians1 {radians[1]}.")
+        radians = self.get_radians(degrees)
+        radians[0] *= 0.01
+        radians[1] *= 0.01
+        print(f"Reduced radians")
+        print(f"radians0 {radians[0]}, radians1 {radians[1]}.")
+        count = 0
+        while True:
+            fixed_y = self.fix_decimal(y, prec=2)
+            fixed_x = self.fix_decimal(x, prec=2)
+            if (fixed_y, fixed_x) == (endy, endx): break
+            count += 1
+            y = round(y + radians[1], 4)
+            x = round(x + radians[0], 4)
+            destination = self.wmap[int(y)][int(x)]
+            ypos = self.fix_decimal(y, prec=1)
+            xpos = self.fix_decimal(x, prec=1)
+            print(f"y {y}, x {x}.")
+            if info: print(f"Future pos {ypos, xpos}.")
+            if destination.hasfloor((ypos, xpos)) == None:
+                tolk.output(f"No floor.")
+                break 
+            if (hasattr(destination, "blocked") 
+            and (ypos, xpos) in destination.blocked): 
+                tolk.output(f"Blocked.")
+                break
+        unit.position = y, x, 0
+        print(f"{count=:}.")
+        for fl in destination.floors:
+            if (ypos, xpos) == fl.position:
+                sound = choice(fl.sounds)
+                unit.clean()
+                bf, gen, src = self.add_source3d(
+                    sound, gain=1, loop=0, linger=1, position=unit.position)
+                unit.generator = gen
+                unit.source = src
+                unit.check_location()
+    def _Move_object(self, unit, backward=0, degrees=None, info=1):
         if unit.can_walk():
             if unit.running == 0: 
                 unit._countdown = self.ctime + unit.walk_countdown
@@ -1126,6 +1196,7 @@ class Main:
             ypos = float(ypos)
             xpos = float(xpos)
             if info: print(f"Future pos {ypos, xpos}.")
+            Pdb().set_trace()
             if destination.hasfloor((ypos, xpos)) == None: return f"No floor."
             if (ypos, xpos) in destination.blocked: return f"Blocked."
             unit.position = y, x, 0
