@@ -29,6 +29,15 @@ class EmptyClass:
         pass
 
 
+class Block:
+    def __init__(self):
+        pass
+    def set_to_rock(self):
+        self.name = "Rock"
+        self.sounds = [
+            ]
+
+
 class Floor:
     def __init__(self):
         pass
@@ -246,24 +255,14 @@ class World:
         player.set_name(name)
         player.set_position(position)
         self.players += [player]
-    def add_tileattr(self):
-        for y in self.map:
-            for it in y:
-                if isinstance(it, int): continue
-                it.generator = None
-                it.source = None
-    def initial_settings(self):
-        for y in range(len(self.map)):
-            for x in range(len(self.map[y])):
-                self.map[y][x].pos = (y, x)
     def new_world(self, info=0):        
         inicio = pygame.time.get_ticks()
         tolk.output(f"creating world.", 1)
         self.name = main.set_attr(attrtype="str")
         if self.name == None: return
         self.ext = ".map"
-        self.width = 612
-        self.length = 612
+        self.width = 1000
+        self.length = 1000
         self.map = []
         for y in range(0, self.length, 1):
             self.map.append([])
@@ -281,11 +280,6 @@ class World:
             print(f"{ctime-inicio}.")
             tolk.output(f"Done.")
             Pdb().set_trace()
-    def restart_tiles(self):
-        for y in self.map:
-            for it in y:
-                if isinstance(it, int): continue
-                it.restart_attr()
     def set_savingmap_settings(self):
         self.players = []
         for y in self.map:
@@ -300,146 +294,15 @@ class World:
         [src.update() for src in self.sources]
 
 
-tiledict = dict(
-    type="Grass",
-    foot_floor=("grass01", "grass02", "grass03", "grass04"),
-    )
-
-
-
 class Tile:
     def __init__(self):
         self.floors = []
+        self.items = []
     
-    def get_type(self):
-        say = 1
-        x = 0
-        types = [
-            "Concrete",
-            "Grass",
-            "Forest",
-            "None",
-            "Sand",
-            "Water",
-            "Rust Wood",
-            "Wood",
-            ]
-        while True:
-            time.sleep(0.1)
-            if say:
-                try:
-                    tolk.output(f"{types[x]}.")
-                except Exception: Pdb().set_trace()
-                say = 0
-
-            for event in pygame.event.get():
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_UP:
-                        x = main.selector(types, x, go="up")
-                        say = 1
-                    if event.key == pygame.K_DOWN:
-                        x = main.selector(types, x, go="down")
-                        say = 1
-                    if event.key == pygame.K_RETURN:
-                        tolk.output(f"set to {types[x]}.")
-                        return types[x]
-                    if event.key == pygame.K_ESCAPE:
-                        return
     def hasfloor(self, position):
         if hasattr(self, "floors") == False: return
         for fl in self.floors:
             if fl.position == position: return True
-    def restart_attr(self):
-        if self.floor == "Grass": self.set_to_grass()
-        elif self.floor == "Sand": self.set_to_sand()
-        elif self.floor == "wall": self.set_to_concrete()
-    def set_basic(self):
-        if hasattr(self, "blocked") == False: self.blocked = []
-    
-    def set_to_concrete(self):
-        self.set_basic()
-        self.floor = "Concrete"
-        self.foot_floor = [
-            "ft-concrete01",
-            "ft-concrete02",
-            "ft-concrete03",
-            "ft-concrete04",
-            "ft-concrete05",
-            "ft-concrete06",
-            "ft-concrete07"
-            ]
-    def set_to_grass(self):
-        self.set_basic()
-        self.floor = "Grass"
-        self.foot_floor = (
-            "ft-grass01",
-            "ft-grass02",
-            "ft-grass03",
-            "ft-grass04",
-            )
-    def set_to_forest(self):
-        self.set_basic()
-        self.floor = "Forest"
-        self.foot_floor = [
-            "ft-forest01",
-            "ft-forest02",
-            "ft-forest03",
-            "ft-forest04",
-            "ft-forest05",
-            "ft-forest06",
-            "ft-forest07",
-            ]
-    def set_to_none(self):
-        y, x = self.y, self.x
-        self.__dict__ = {}
-        self.y, self.x = y, x
-    def set_to_rustwood(self):
-        self.set_basic()
-        self.floor = "Rust Wood"
-        self.foot_floor = [
-            "ft-rustwood01",
-            "ft-rustwood02",
-            "ft-rustwood03",
-            "ft-rustwood04",
-            "ft-rustwood05",
-            "ft-rustwood06",
-            "ft-rustwood07"
-            ]
-    def set_to_sand(self):
-        self.set_basic()
-        self.floor = "Sand"
-        self.foot_floor = (
-            "ft-sand01",
-            "ft-sand02",
-            "ft-sand03",
-            "ft-sand04",
-            "ft-sand05",
-            )
-    def set_to_water(self):
-        self.set_basic()
-        self.floor = "Water"
-        self.foot_floor = [
-            "ft-water01",
-            "ft-water02",
-            "ft-water03",
-            "ft-water04",
-            "ft-water05",
-            "ft-water06",
-            "ft-water07",
-            "ft-water08",
-            "ft-water09"
-            ]
-    def set_to_wood(self):
-        self.set_basic()
-        self.floor = "Wood"
-        self.foot_floor = [
-            "ft-wood01",
-            "ft-wood02",
-            "ft-wood03",
-            "ft-wood04",
-            "ft-wood05",
-            "ft-wood06"
-            ]
     def set_floor(self, floor_type):
         y = self.y
         x = self.x
@@ -520,7 +383,7 @@ class Main:
                         exit()
     def _edit_map(self):
         self.wmap = self.world.map
-        self.world.add_player(0, name="Editor", position=[370, 60, 0])
+        self.world.add_player(0, name="Editor", position=[370, 200, 0])
         self.player = self.world.players[0]
         self.player.set_editor()
         self.pos = self.wmap[0][0]
@@ -786,6 +649,11 @@ class Main:
             dec)
         yrange = [round(it,1) for it in yrange]
         return yrange
+    def goto_position(self, y=None, x=None):
+        if not y: y = self.player.position[0]
+        if not x: x = self.player.position[1]
+        self.player.position = y, x, 0
+        self.set_map_move()
     def init_source3d(self, info=0):
         for it in self.world.sources:
             if it.sounds == []: continue
@@ -942,6 +810,14 @@ class Main:
     def keys_map_editor(self, event):
         self.keys_edit_tile(event)        
         # Map movement.
+        if event.key == pygame.K_g:
+            msg = f"Enter a float value for y."
+            tolk.output(msg)
+            y = self.set_attr(attrtype="float")
+            msg = f"Enter a float value for x."
+            tolk.output(msg)
+            x = self.set_attr(attrtype="float")
+            self.goto_position(y, x)
         if event.key == pygame.K_DOWN:
             if self.ctrl == 0: self.move_editor(self.player, 180)
             elif self.ctrl: self.move_editor(self.player, 180, 1)
@@ -1430,9 +1306,9 @@ class Main:
         say = 1
         i = 0
         data = str()
-        if attrtype == "str": tolk.output(f"type a string.",1)
-        if attrtype == "int": tolk.output(f"type a int.",1)
-        if attrtype == "float": tolk.output(f"type a float.",1)        
+        if attrtype == "str": tolk.output(f"type a string.")
+        if attrtype == "int": tolk.output(f"type a int.")
+        if attrtype == "float": tolk.output(f"type a float.")        
         while True:
             pygame.time.Clock().tick(60)
             if i < 0: i = 0
@@ -1446,6 +1322,7 @@ class Main:
                         if data: 
                             if attrtype == "str":  return str(data)
                             if attrtype == "int":  return int(data)
+                            if attrtype == "float":  return float(data)
                         else: return None
                     if event.key == pygame.K_F12:
                         tolk.output(f"Debug On.",1)
@@ -1521,9 +1398,6 @@ class Main:
         locations = self.get_location(self.player.position)
         old_pos = self.pos
         self.pos = self.world.map[int(self.y)][int(self.x)]
-        if hasattr(self.pos, "floor"):
-            if self.player.position[:2] in self.pos.blocked: 
-                tolk.output(f"Blocked.")
         if old_pos != self.pos:
             self.map_info()
         if locations != self.locations:
